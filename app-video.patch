@@ -1,0 +1,69 @@
+--- app.v8.js	2026-11-12 18:46:45.487234519 +0100
++++ app.v8video.js	2026-11-12 18:46:45.499234519 +0100
+@@ -1401,8 +1401,9 @@
+         '<div class="challenge" id="challenge"></div><div class="photos">' +
+         photoSlot("front", tr("reg.frontGraded"), { showSlab: true }) +
+         photoSlot("back", tr("reg.backGraded"), { optional: true, hint: tr("reg.optionalHint"), showSlab: true }) +
+-        photoSlot("challenge", tr("reg.challengePhoto"), { showSlab: true }) +
+-        photoSlot("cert", tr("reg.certPhoto"), { optional: true, showSlab: true, defaultRatio: "free" }) + "</div>";
++        photoSlot("cert", tr("reg.certPhoto"), { optional: true, showSlab: true, defaultRatio: "free" }) + "</div>" +
++        '<div class="challenge-video"><p><b>Video-sfida</b>: inquadra la carta nella custodia e leggi ad alta voce il codice qui sopra (circa 5 secondi, massimo 10).</p>' +
++        '<input type="file" id="challenge-video" accept="video/*" capture="environment"><p class="dim" id="challenge-video-status"></p></div>';
+     }
+     html += '<p class="error" id="form-err" hidden></p>' +
+       '<button class="btn primary" id="submit-card" type="button">' + (raw ? tr("reg.submitRaw") : tr("reg.submitGraded")) + "</button></section>";
+@@ -2080,7 +2081,7 @@
+     }
+     return "<h2>Verifica</h2>" +
+       (c.missing_back ? '<p class="notice">Retro mancante</p>' : "") +
+-      ph("front", "Fronte") + ph("back", "Retro") + ph("challenge", "Foto-sfida (codice " + esc(c.challenge_code || "") + ")") + ph("cert", "Certificato") +
++      ph("front", "Fronte") + ph("back", "Retro") + (c.challenge_video ? '<div class="panel"><h3>Video-sfida (codice ' + esc(c.challenge_code || "") + ')</h3><video controls playsinline preload="metadata" src="/api/cards/' + encodeURIComponent(c.id) + '/challenge-video" style="max-width:100%;border-radius:12px"></video></div>' : (c.photos && c.photos.challenge ? ph("challenge", "Foto-sfida (codice " + esc(c.challenge_code || "") + ")") : (c.is_ungraded ? "" : '<p class="notice">Video-sfida mancante</p>'))) + ph("cert", "Certificato") +
+       '<section class="panel"><p><b>' + esc(c.model.name) + "</b> · " + esc(c.model.set_name) + " · " + esc(c.model.code_printed) + " · " + esc(c.model.language) + " · " + esc(c.model.variant) + "</p>" +
+       "<p>" + (c.is_ungraded ? ("Non gradata" + (c.card_condition ? " · " + esc(conditionLabel(c.card_condition)) : "") + " — la pubblicazione non assegna rarità né seriale") : esc(graderLabel(c.grader)) + " " + esc(c.certificate_no || "") + (c.grade ? " voto " + esc(c.grade) : "")) + "</p>" +
+       (c.asking_price_cents ? "<p>Prezzo di vendita chiesto: <b>" + euros(c.asking_price_cents) + "</b></p>" : '<p class="notice">Nessun prezzo di vendita impostato.</p>') +
+@@ -2092,7 +2093,7 @@
+ 
+   var photos = { front: null, back: null, challenge: null, cert: null };
+   var photoWork = { front: null, back: null, challenge: null, cert: null };
+-  var challengeCode = "", challengeId = "";
++  var challengeCode = "", challengeId = "", challengeVideoOk = false;
+ 
+   var exportTimers = {};
+   function updateRatioButtons(kind) {
+@@ -2307,6 +2308,27 @@
+   function bindRegister() {
+     var raw = document.getElementById("kind-fixed").value === "raw";
+     var ch = document.getElementById("challenge");
++    challengeVideoOk = false;
++    var cv = document.getElementById("challenge-video");
++    if (cv) cv.addEventListener("change", function () {
++      var f = cv.files && cv.files[0], st = document.getElementById("challenge-video-status");
++      challengeVideoOk = false;
++      if (!f) return;
++      if (f.size > 20 * 1024 * 1024) { st.textContent = "Video troppo pesante (max 20 MB): registra circa 5 secondi."; return; }
++      if (!challengeId) { st.textContent = "Codice non ancora pronto, riprova tra un attimo."; return; }
++      var probe = document.createElement("video"); probe.preload = "metadata"; probe.muted = true;
++      var url = URL.createObjectURL(f);
++      var send = function () {
++        URL.revokeObjectURL(url);
++        if (isFinite(probe.duration) && probe.duration > 10.5) { st.textContent = "Video troppo lungo: massimo 10 secondi (bastano 5)."; return; }
++        st.textContent = "Caricamento del video…";
++        fetch("/api/cards/challenge/" + encodeURIComponent(challengeId) + "/video", { method: "POST", credentials: "include", headers: { "content-type": f.type || "application/octet-stream" }, body: f })
++          .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || ("Errore " + r.status)); return d; }); })
++          .then(function () { challengeVideoOk = true; st.textContent = "Video caricato."; })
++          .catch(function (err) { st.textContent = err.message; });
++      };
++      probe.onloadedmetadata = send; probe.onerror = send; probe.src = url;
++    });
+     if (ch) { challengeCode = ""; challengeId = ""; ch.textContent = "…"; api("cards/challenge", { method: "POST", body: {} }).then(function (d) { challengeCode = d.code; challengeId = d.challenge_id; ch.textContent = d.code; }).catch(function (err) { ch.textContent = ""; showErr(err.message); }); }
+     var q = document.getElementById("cat-q");
+     var catGame = document.getElementById("cat-game");
+@@ -2461,7 +2483,7 @@
+       if (raw && !photos.front && !photos.back) { showErr(tr("reg.photosRequiredRaw")); return; }
+       if (!photos.front) { showErr(tr("photo.needFront")); return; }
+       if (raw && !photos.back) { showErr(tr("photo.needBack")); return; }
+-      if (!raw && !photos.challenge) { showErr(tr("photo.needChallenge")); return; }
++      if (!raw && !challengeVideoOk) { showErr("Carica il video-sfida: inquadra la carta e leggi ad alta voce il codice"); return; }
+       var warns = Object.keys(photoWork).reduce(function (acc, k) {
+         return acc.concat((photoWork[k] && photoWork[k].warnings) || []);
+       }, []);

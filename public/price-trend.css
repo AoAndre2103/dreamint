@@ -1,0 +1,46 @@
+/* Stock-style market price trend */
+.price-trend { margin: 8px 0 2px; }
+.pt-widget { font-size: 13px; }
+.pt-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.pt-last { display: flex; align-items: baseline; gap: 8px; }
+.pt-last strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.pt-chg {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 650;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.pt-widget.is-up .pt-chg, .pt-spark.is-up .pt-line, .pt-spark.is-up .pt-dot { color: #16804a; }
+.pt-widget.is-down .pt-chg, .pt-spark.is-down .pt-line, .pt-spark.is-down .pt-dot { color: #c0392b; }
+.pt-widget.is-flat .pt-chg { color: var(--muted); }
+.pt-widget.is-up .pt-chg { color: #16804a; }
+.pt-widget.is-down .pt-chg { color: #c0392b; }
+html[data-theme="dark"] .pt-widget.is-up .pt-chg { color: #3dce7a; }
+html[data-theme="dark"] .pt-widget.is-down .pt-chg { color: #ff6b6b; }
+.pt-src { margin: 0; color: var(--muted); font-size: 11.5px; }
+.pt-tabs { display: flex; gap: 4px; margin: 4px 0 6px; }
+.pt-tab {
+  appearance: none; background: transparent; border: 1px solid var(--line);
+  color: var(--muted); border-radius: 999px; padding: 2px 9px;
+  font: inherit; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  cursor: pointer; font-weight: 650;
+}
+.pt-tab.on { color: var(--gold-2); border-color: var(--gold); background: var(--wash-gold, rgba(196,161,90,.12)); }
+.pt-spark { display: block; width: 100%; height: auto; max-width: 320px; overflow: visible; }
+.pt-spark .pt-line { stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.pt-spark .pt-dot { fill: currentColor; }
+.pt-spark.is-up .pt-area { fill: rgba(22, 128, 74, 0.16); }
+.pt-spark.is-down .pt-area { fill: rgba(192, 57, 43, 0.16); }
+.pt-spark.is-flat .pt-area { fill: rgba(120, 120, 120, 0.12); }
+.pt-spark.is-flat .pt-line, .pt-spark.is-flat .pt-dot { color: #8a8680; }
+html[data-theme="dark"] .pt-spark.is-up .pt-area { fill: rgba(61, 206, 122, 0.18); }
+html[data-theme="dark"] .pt-spark.is-down .pt-area { fill: rgba(255, 107, 107, 0.18); }
+.pt-collecting { margin: 4px 0 0; color: var(--muted); font-size: 12px; font-style: italic; }
+.pt-widget.is-compact { margin-top: 4px; }
+.pt-compact-row { display: flex; align-items: baseline; gap: 6px; font-size: 12px; }
+.pt-last-sm { font-variant-numeric: tabular-nums; color: var(--muted); }
+.pt-widget.is-compact .pt-spark { max-width: 160px; height: 36px; }
+.pt-widget.is-compact .pt-collecting { font-size: 11px; }
+.trade-card .price-trend, .slab-tile .price-trend { pointer-events: none; }
+.share-main .price-trend { margin: 16px auto 0; max-width: 320px; text-align: left; }
+.pc-tip[hidden] { display: none !important; }

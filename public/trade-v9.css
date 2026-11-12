@@ -1,0 +1,107 @@
+/* Override the global label { text-transform: uppercase } on v9 forms. */
+.dm-v9-list-form label,
+.dm-cert-form label,
+.dm-chat-form label { text-transform: none; letter-spacing: 0; }
+/* DreaMint trade v9 — two-price markets, cert search, chat, holo / Verificata.
+   Do not put these rules in reveal-v2.css. */
+.dm-offer-filters { margin: 12px 0 8px; flex-wrap: wrap; }
+.pill-physical { background: #2a1a0c; color: #f3d2a0; border: 1px solid #c4893a; }
+.pill-digital { background: #0c2230; color: #9be7ff; border: 1px solid #3aa7c4; }
+.pill-fullset { letter-spacing: .02em; }
+.dm-physical-note { margin: 8px 0; color: #d8c6a4; font-size: .92rem; line-height: 1.4; }
+.dm-tile-note { font-size: .78rem; margin-top: 6px; }
+.dm-v9-list-form .field { margin-bottom: 12px; }
+.dm-deal-notice { margin: 12px 0; padding: 12px 14px; background: rgba(2,172,121,.12); border: 1px solid rgba(2,172,121,.45); border-radius: 12px; line-height: 1.45; }
+.dm-contact-row { margin: 12px 0; }
+.dm-cert-compact, .dm-cert-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 12px 0 16px; }
+.dm-cert-form .field { flex: 1 1 220px; margin: 0; }
+.dm-cert-result { margin-top: 20px; padding: 16px; border: 1px solid rgba(244,239,228,.12); border-radius: 16px; background: rgba(7,19,28,.4); }
+.dm-cert-result h2 { margin: 0 0 6px; }
+.dm-cert-listings { margin: 8px 0 0; padding-left: 1.1em; }
+.dm-cert-listings a { color: #8EFCE5; }
+.dm-inbox .list-item, .dm-chat { max-width: 720px; }
+.dm-chat-tools { margin: 8px 0 16px; gap: 8px; }
+.dm-chat-log { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 16px; min-height: 180px; }
+.dm-msg { padding: 10px 12px; border-radius: 12px; background: rgba(244,239,228,.06); max-width: 92%; }
+.dm-msg.is-mine { align-self: flex-end; background: rgba(2,172,121,.16); }
+.dm-msg-meta { font-size: .78rem; color: #9BB0B8; margin-bottom: 4px; }
+.dm-off-warn { margin: 8px 0 0; padding: 8px 10px; background: rgba(200, 80, 40, .18); border: 1px solid rgba(255, 140, 80, .55); border-radius: 8px; color: #ffd7b8; font-size: .88rem; }
+.dm-chat-form textarea { width: 100%; min-height: 72px; margin-bottom: 8px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+
+/* Animated holographic sheen on the digital copy (card / listing page). */
+.card-hero [data-holo-live] .slab-holo,
+.product-digital [data-holo-live] .slab-holo,
+.dm-holo-sheen {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(115deg,
+      transparent 18%,
+      rgba(255,255,255,.55) 36%,
+      rgba(160,230,255,.28) 44%,
+      transparent 52%,
+      rgba(255,210,150,.28) 64%,
+      transparent 78%);
+  background-size: 240% 240%;
+  background-position: var(--hx, 45%) var(--hy, 40%);
+  mix-blend-mode: plus-lighter;
+  opacity: .75;
+  animation: dm-holo-idle 5.5s ease-in-out infinite;
+  z-index: 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-hero [data-holo-live] .slab-holo,
+  .product-digital [data-holo-live] .slab-holo,
+  .dm-holo-sheen { animation: none; }
+}
+[data-holo-live].is-live .slab-holo,
+[data-holo-live].is-live .dm-holo-sheen { animation: none; opacity: 1; }
+@keyframes dm-holo-idle {
+  0%, 100% { background-position: 28% 42%; }
+  50% { background-position: 72% 58%; }
+}
+
+.dm-verified {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(2,172,121,.55);
+  background: rgba(2,172,121,.12);
+  width: fit-content;
+  max-width: 100%;
+  font-size: .88rem;
+}
+.dm-verified strong { letter-spacing: .04em; text-transform: uppercase; font-size: .78rem; }
+.dm-verified-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #7d8a86;
+  box-shadow: 0 0 0 0 rgba(2,172,121,.0);
+}
+.dm-verified.is-live .dm-verified-dot {
+  background: #02AC79;
+  box-shadow: 0 0 0 4px rgba(2,172,121,.18);
+  animation: dm-verified-pulse 2s ease-in-out infinite;
+}
+@keyframes dm-verified-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(2,172,121,.16); }
+  50% { box-shadow: 0 0 0 6px rgba(2,172,121,.28); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dm-verified.is-live .dm-verified-dot { animation: none; }
+}
+
+.card-hero .rv2-window,
+.product-digital .rv2-window { position: relative; overflow: hidden; }
+.card-hero .rv2-copy .dm-holo-sheen,
+.product-digital .rv2-copy .dm-holo-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}

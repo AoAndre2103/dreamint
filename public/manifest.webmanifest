@@ -1,0 +1,43 @@
+{
+  "name": "DreaMint",
+  "short_name": "DreaMint",
+  "description": "Marketplace italiano di carte TCG: mint digitale per le gradate, mercato ordinato per le non gradate.",
+  "start_url": "https://dreamint.it/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#07131C",
+  "theme_color": "#07131C",
+  "lang": "it",
+  "icons": [
+    {
+      "src": "/icons/dm-app-20261112-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/dm-app-20261112-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/dm-app-20261112-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/dm-app-20261112-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/dm-20261112.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

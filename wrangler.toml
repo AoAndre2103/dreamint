@@ -1,0 +1,32 @@
+name = "gemint-beta"
+compatibility_date = "2025-11-01"
+pages_build_output_dir = "public"
+
+[vars]
+CONTACT_EMAIL = "info@dreamint.it"
+LAUNCH_PUBLIC_DATE = ""
+LAUNCH_PUBLIC_DATE_LABEL = "Data di lancio pubblico: da annunciare"
+OFFER_DAYS = "15"
+FEE_AFTER_BPS = "250"
+FEE_OFFER_BPS = "0"
+# PayPal: no REST creds = WPS+_xclick+IPN (no P.IVA). Set PAYPAL_AUTO=off for manual only.
+# Secrets (optional REST): PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID
+PAYPAL_ENV = "live"
+PAYPAL_AUTO = "wps"
+PAYPAL_AUTOCOMPLETE_DAYS = "14"
+# Owner contact list. SECURITY: no longer grants admin automatically (email is not verified);
+# admin is only the role already stored in D1 users.role.
+OWNER_EMAILS = "andrea.bizzo@live.it"
+# Notify admin of new review/purchase/payment. Sending stays off until RESEND_API_KEY (or BREVO_API_KEY) is set as a Pages secret.
+NOTIFY_EMAIL = "andrea.bizzo@live.it"
+NOTIFY_PROVIDER = "resend"
+NOTIFY_FROM = "DreaMint <noreply@dreamint.it>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gemint-beta"
+database_id = "32800eb7-c19e-45e5-9e1a-ced35c8fd933"
+
+[[kv_namespaces]]
+binding = "PHOTOS"
+id = "0293f7d307a64ebbab40a5da1616211b"

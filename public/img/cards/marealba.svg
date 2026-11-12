@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420" role="img" aria-label="Marealba">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#062022"/>
+      <stop offset="1" stop-color="#1a120c"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f3e2b0"/>
+      <stop offset="1" stop-color="#c9a24a"/>
+    </linearGradient>
+    <linearGradient id="hpbar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3db8c4"/>
+      <stop offset="1" stop-color="#d4f0f4"/>
+    </linearGradient>
+    <clipPath id="artw"><rect x="22" y="64" width="256" height="188" rx="4"/></clipPath>
+  </defs>
+  <rect width="300" height="420" rx="10" fill="url(#frame)"/>
+  <rect x="8" y="8" width="284" height="404" rx="7" fill="none" stroke="url(#gold)" stroke-width="2.2"/>
+  <rect x="14" y="14" width="272" height="392" rx="5" fill="#0c0a0c" opacity=".35"/>
+  <text x="24" y="42" font-family="Georgia, serif" font-size="20" font-weight="700" fill="#f7f0df">Marealba</text>
+  <text x="276" y="32" text-anchor="end" font-family="ui-monospace, monospace" font-size="11" fill="#d4f0f4" letter-spacing="1">HP</text>
+  <text x="276" y="52" text-anchor="end" font-family="ui-monospace, monospace" font-size="22" font-weight="700" fill="#f7f0df">90</text>
+  <rect x="24" y="50" width="170" height="5" rx="2" fill="#2a2218"/>
+  <rect x="24" y="50" width="117" height="5" rx="2" fill="url(#hpbar)"/>
+  <rect x="22" y="64" width="256" height="188" rx="4" fill="#100c10"/>
+  <g clip-path="url(#artw)">
+    
+    <rect width="300" height="420" fill="#062428"/>
+    <radialGradient id="glow3" cx="40%" cy="40%" r="50%"><stop offset="0" stop-color="#3db8c4" stop-opacity=".5"/><stop offset="1" stop-color="#062428" stop-opacity="0"/></radialGradient>
+    <rect x="22" y="64" width="256" height="188" fill="url(#glow3)"/>
+    <circle cx="230" cy="96" r="22" fill="#d4f0f4" opacity=".85"/>
+    <circle cx="230" cy="96" r="14" fill="#f7fffe" opacity=".5"/>
+    <path d="M60 220 C90 170 150 150 190 168 C230 186 236 150 250 140" fill="none" stroke="#1a6a72" stroke-width="16" stroke-linecap="round"/>
+    <path d="M60 220 C90 170 150 150 190 168 C230 186 236 150 250 140" fill="none" stroke="#3db8c4" stroke-width="7" stroke-linecap="round"/>
+    <path d="M60 220 C90 170 150 150 190 168 C230 186 236 150 250 140" fill="none" stroke="#d4f0f4" stroke-width="2"/>
+    <path d="M168 160 C176 130 196 118 214 126 C200 136 192 154 186 172 Z" fill="#0a3a40" stroke="#9ee7ea" stroke-width="1.2"/>
+    <path d="M70 226 C84 214 108 216 98 234 C90 246 76 240 70 226Z" fill="#d4f0f4" opacity=".8"/>
+    <path d="M120 188 C136 176 154 186 144 202 C136 212 124 204 120 188Z" fill="#9ee7ea" opacity=".7"/>
+    <circle cx="248" cy="138" r="4" fill="#f7fffe"/>
+    <path d="M40 236 Q90 228 150 240 Q210 252 260 236" fill="none" stroke="#9ee7ea" stroke-width="1.2" opacity=".5"/>
+
+    <rect x="22" y="64" width="256" height="188" fill="url(#holo)" opacity=".28"/>
+  </g>
+  <rect x="22" y="64" width="256" height="188" rx="4" fill="none" stroke="rgba(243,226,176,.35)"/>
+  <rect x="22" y="262" width="256" height="88" rx="4" fill="#140f0c" stroke="rgba(243,226,176,.2)"/>
+  <text x="34" y="286" font-family="ui-monospace, monospace" font-size="10" letter-spacing="1.4" fill="#d4f0f4">ATTACCO</text>
+  <text x="34" y="310" font-family="Georgia, serif" font-size="16" fill="#f7f0df">Marea crescente</text>
+  <text x="266" y="310" text-anchor="end" font-family="ui-monospace, monospace" font-size="20" font-weight="700" fill="#d4f0f4">60</text>
+  <text x="34" y="334" font-family="Georgia, serif" font-size="10" font-style="italic" fill="#c9bba4">Porta la luna sulle spume.</text>
+  <text x="24" y="378" font-family="ui-monospace, monospace" font-size="11" letter-spacing="1.5" fill="#e8d48a">DMT 024/102</text>
+  <text x="150" y="378" font-family="ui-monospace, monospace" font-size="11" letter-spacing="2" fill="#f7f0df">ITA</text>
+  <text x="276" y="378" text-anchor="end" font-family="ui-monospace, monospace" font-size="10" letter-spacing="1" fill="#c9a24a">DreaMint</text>
+  <text x="24" y="398" font-family="ui-monospace, monospace" font-size="8" letter-spacing="1" fill="#8a8070">ARCHIVIO ORIGINALE · NON UFFICIALE</text>
+  <defs>
+    <linearGradient id="holo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8ab0" stop-opacity=".0"/>
+      <stop offset=".25" stop-color="#ffe08a" stop-opacity=".55"/>
+      <stop offset=".5" stop-color="#7dffc8" stop-opacity=".35"/>
+      <stop offset=".75" stop-color="#7ab0ff" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#d39bff" stop-opacity=".0"/>
+    </linearGradient>
+  </defs>
+</svg>

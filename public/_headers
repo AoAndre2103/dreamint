@@ -1,0 +1,18 @@
+/*.js
+  Cache-Control: public, max-age=0, must-revalidate
+/*.css
+  Cache-Control: public, max-age=0, must-revalidate
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/favicon.ico
+  Cache-Control: public, max-age=0, must-revalidate
+/favicon.svg
+  Cache-Control: public, max-age=0, must-revalidate
+/favicon-32.png
+  Cache-Control: public, max-age=0, must-revalidate
+/apple-touch-icon.png
+  Cache-Control: public, max-age=0, must-revalidate
+/manifest.webmanifest
+  Cache-Control: public, max-age=0, must-revalidate

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07131C" />
+  <meta name="description" content="DreaMint è il marketplace italiano di carte TCG: compra e vendi Pokémon, One Piece, Lorcana, Magic e Yu-Gi-Oh!. Ogni gradata verificata riceve una copia digitale unica con seriale e rarità. In beta, 0% commissioni." />
+  <title>DreaMint — Marketplace di carte TCG. Le gradate diventano uniche.</title>
+  <link rel="canonical" href="https://dreamint.it/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="it_IT" />
+  <meta property="og:site_name" content="DreaMint" />
+  <meta property="og:url" content="https://dreamint.it/" />
+  <meta property="og:title" content="DreaMint — Marketplace di carte TCG. Le gradate diventano uniche." />
+  <meta property="og:description" content="DreaMint è il marketplace italiano di carte TCG: compra e vendi Pokémon, One Piece, Lorcana, Magic e Yu-Gi-Oh!. Ogni gradata verificata riceve una copia digitale unica con seriale e rarità. In beta, 0% commissioni." />
+  <meta property="og:image" content="https://dreamint.it/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DreaMint — Marketplace di carte TCG. Le gradate diventano uniche." />
+  <meta name="twitter:description" content="DreaMint è il marketplace italiano di carte TCG: compra e vendi Pokémon, One Piece, Lorcana, Magic e Yu-Gi-Oh!. Ogni gradata verificata riceve una copia digitale unica con seriale e rarità. In beta, 0% commissioni." />
+  <meta name="twitter:image" content="https://dreamint.it/og.png" />
+  <link rel="alternate" hreflang="it" href="https://dreamint.it/" />
+  <link rel="alternate" hreflang="x-default" href="https://dreamint.it/" />
+  <script>
+    (function () {
+      var h = location.hash || "";
+      var head = document.head;
+      function preload(href, as, type, pri) {
+        var l = document.createElement("link");
+        l.rel = "preload"; l.as = as; if (type) l.type = type;
+        l.href = href; if (pri) l.setAttribute("fetchpriority", pri);
+        if (as === "font") l.crossOrigin = "anonymous";
+        head.appendChild(l);
+      }
+      if (!h || h === "#" || h === "#/") {
+        preload("/img/demo/luffy-op05-119-sp-gold-320.webp", "image", "image/webp", "high");
+        return;
+      }
+      if (h === "#/commissioni" || h === "#/fees") {
+        /* Hero text uses system fonts for LCP; webfonts load later with the app and must not swap the hero. */
+      }
+    })();
+  </script>
+  <noscript><link rel="stylesheet" href="/fonts.css?v=20261110d" /></noscript>
+  <link rel="icon" href="/icons/dm-20261112.ico" sizes="16x16 32x32 48x48" />
+  <link rel="icon" href="/icons/dm-20261112.svg" type="image/svg+xml" />
+  <link rel="icon" href="/icons/dm-20261112-32.png" type="image/png" sizes="32x32" />
+  <link rel="icon" href="/icons/dm-20261112-16.png" type="image/png" sizes="16x16" />
+  <link rel="apple-touch-icon" href="/icons/dm-app-20261112-180.png" />
+  <link rel="manifest" href="/manifest-20261112.webmanifest" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("gemint-theme");
+        var theme = saved === "light" || saved === "dark" ? saved : "dark";
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+      try {
+        var lang = localStorage.getItem("dreamint-lang") || "it";
+        if (lang !== "en") lang = "it";
+        document.documentElement.setAttribute("lang", lang === "en" ? "en" : "it");
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/styles.css?v=20261112v4" />
+  <link rel="stylesheet" href="/design-tokens.css?v=20261112v4" />
+  <link rel="stylesheet" href="/v2-theme.css?v=20261112v8" />
+  <link rel="stylesheet" href="/v2-home.css?v=20261112v7" />
+</head>
+<body>
+  <div class="void" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+  <div id="launch-banner" class="launch-banner lb2"><span class="lb-badge">Beta</span><span class="lb-text">DreaMint è in beta. Al lancio ufficiale, 15 giorni a ZERO commissioni DreaMint!</span><a class="lb-cta" href="#/commissioni">Scopri i vantaggi del lancio</a><span class="lb-note">I costi di PayPal restano separati.</span></div>
+  <header class="topnav">
+    <a class="brand" href="#/" data-link aria-label="DreaMint, vai alla home">
+      <img class="brand-logo brand-logo-light" src="/img/dreamint-logo-full.webp?v=20261110d" width="645" height="200" alt="" loading="lazy" decoding="async" />
+      <img class="brand-logo brand-logo-dark" src="/img/dreamint-logo-full-dark.webp?v=20261110d" width="645" height="200" alt="" loading="lazy" decoding="async" />
+    </a>
+    <div class="nav-end">
+      <nav class="desk-nav" id="desk-nav"></nav>
+      <div class="user-search" id="user-search" hidden>
+        <button type="button" class="user-search-toggle" id="user-search-toggle" aria-expanded="false" aria-controls="user-search-panel">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>
+        </button>
+        <div class="user-search-panel" id="user-search-panel">
+          <label class="sr-only" for="user-search-q">Cerca un utente</label>
+          <input id="user-search-q" type="search" placeholder="Cerca un utente…" maxlength="30" autocomplete="off" autocapitalize="none" spellcheck="false">
+          <div id="user-search-results" class="user-search-results" hidden role="listbox"></div>
+        </div>
+      </div>
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button type="button" id="lang-it" data-lang="it" aria-pressed="true">IT</button>
+        <button type="button" id="lang-en" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Modalità notte">
+        <svg class="theme-ico theme-ico-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15.5 3.5A8.5 8.5 0 1 0 20.5 14 7 7 0 0 1 15.5 3.5Z"/></svg>
+        <svg class="theme-ico theme-ico-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>
+        <span class="theme-toggle-label">Modalità notte</span>
+      </button>
+    </div>
+  </header>
+  <main id="app" class="app-main"><template id="home-shell-tpl"><div class="home-v2" id="home-shell"><section class="h2-hero" aria-labelledby="h2-title"><div class="h2-copy"><p class="h2k">Beta aperta · Marketplace TCG italiano</p><h1 id="h2-title" class="h2-title">Le tue carte, <em>in una nuova luce.</em></h1><p class="h2-lede">Compra e vendi carte Pokémon, One Piece, Lorcana, Magic e Yu-Gi-Oh!. Ogni gradata verificata riceve una copia digitale unica, con seriale e rarità estratti una sola volta.</p><div class="h2-ctas"><a class="btn primary" href="#/gradate">Esplora il marketplace</a><a class="btn secondary" href="#/registra">Vendi una carta</a><a class="btn ghost" href="#/registrati">Crea la tua collezione</a></div></div><div class="h2-stage" aria-hidden="true"><div class="h2-grid" aria-hidden="true"></div><div class="h2-light" aria-hidden="true"></div><div class="h2-emblem" aria-hidden="true"><img src="/img/fx/dm-icon-128.webp" alt="" width="128" height="128" decoding="async"></div><div class="h2-pads" aria-hidden="true"><i><b></b></i><i><b></b></i><i><b></b></i></div><div class="slab-stage hero-slab"><div class="hero-fan"><div class="hero-card" data-slot="0" data-pos="-1"><div class="hero-card-spin" style="--spin: 0.00deg;"><div class="hero-card-face is-front"><div class="slab-3d hero-slab-face is-live" data-tier="epica" style="--hx: 50.0%; --hy: 54.0%;"><div class="slab-aura" aria-hidden="true"></div><div class="slab-acrylic"><div class="slab-window"><span class="hero-demo-tag" aria-hidden="true">Esempio</span><div class="slab-art has-real-photo"><img class="slab-photo" src="/img/demo/charizard-base1-4-320.webp" width="320" height="440" decoding="async" loading="lazy" fetchpriority="low" alt="Charizard · Base Set 4/102 Holo · PSA 10 · Esempio"></div><div class="slab-holo"></div><div class="slab-shine"></div><div class="slab-foil"></div><div class="slab-glare"></div><div class="slab-noise"></div><div class="slab-glass"></div><span class="slab-tier-chip" aria-hidden="true">Epica · 8%</span></div><div class="slab-label" aria-hidden="true"><div class="lab-left"><span class="lab-grader">PSA</span><span class="lab-serial">#1386 / 9999</span></div><span class="lab-grade">10</span></div></div></div></div><div class="hero-card-face is-back"></div></div></div><div class="hero-card is-front" data-slot="1" data-pos="0"><div class="hero-card-spin" style="--spin: 0.00deg;"><div class="hero-card-face is-front"><div class="slab-3d hero-slab-face slab-hype is-live" data-tier="leggendaria" style="--hx: 50.0%; --hy: 54.0%;"><div class="slab-aura" aria-hidden="true"></div><div class="slab-acrylic"><div class="slab-window"><span class="hero-demo-tag" aria-hidden="true">Esempio</span><div class="slab-art has-real-photo"><img class="slab-photo" src="/img/demo/luffy-op05-119-sp-gold-320.webp" width="320" height="447" decoding="async" fetchpriority="high" alt="Monkey.D.Luffy SP Gold · OP05-119 · PSA 10 · Esempio"></div><div class="slab-holo"></div><div class="slab-shine"></div><div class="slab-foil"></div><div class="slab-glare"></div><div class="slab-noise"></div><div class="slab-glass"></div><div class="slab-sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="slab-tier-chip" aria-hidden="true">Leggendaria</span></div><div class="slab-label" aria-hidden="true"><div class="lab-left"><span class="lab-grader">PSA</span><span class="lab-serial">#4821 / 9999</span></div><span class="lab-grade">10</span></div></div></div></div><div class="hero-card-face is-back"></div></div></div><div class="hero-card" data-slot="2" data-pos="1"><div class="hero-card-spin" style="--spin: 0.00deg;"><div class="hero-card-face is-front"><div class="slab-3d hero-slab-face is-live" data-tier="rara" style="--hx: 50.0%; --hy: 54.0%;"><div class="slab-aura" aria-hidden="true"></div><div class="slab-acrylic"><div class="slab-window"><span class="hero-demo-tag" aria-hidden="true">Esempio</span><div class="slab-art has-real-photo"><img class="slab-photo" src="/img/demo/dark-magician-pharaohs-servant-mamo-en001-320.webp" width="320" height="466" decoding="async" loading="lazy" fetchpriority="low" alt="Dark Magician, the Pharaoh's Servant · MAMO-EN001 · GRAAD 10 · Esempio"></div><div class="slab-holo"></div><div class="slab-shine"></div><div class="slab-foil"></div><div class="slab-glare"></div><div class="slab-noise"></div><div class="slab-glass"></div><span class="slab-tier-chip" aria-hidden="true">Rara · 20%</span></div><div class="slab-label" aria-hidden="true"><div class="lab-left"><span class="lab-grader">GRAAD</span><span class="lab-serial">#7360 / 9999</span></div><span class="lab-grade">10</span></div></div></div></div><div class="hero-card-face is-back"></div></div></div></div></div></div></section></div></template></main>
+  <script>(function(){var h=location.hash||"",a=document.getElementById("app"),en=false;try{en=localStorage.getItem("dreamint-lang")==="en";}catch(x){}if(!a)return;if(!h||h==="#"||h==="#/"){var tpl=document.getElementById("home-shell-tpl");if(tpl)a.appendChild(tpl.content.cloneNode(true));try{if(en){var e=document.getElementById("home-shell");if(e)e.style.visibility="hidden";}}catch(x){}}else if(h==="#/commissioni"||h==="#/fees"){var t=en?"Clear from day one.":"Chiaro fin da subito.";var lede=en?"During the beta DreaMint charges no fees and no subscription. Here are the plans planned for the future, so you already know how they will work.":"Durante la beta DreaMint non applica nessuna commissione e nessun abbonamento. Qui trovi i piani previsti per il futuro, così sai già come funzioneranno.";var kick=en?"Fees and plans":"Commissioni e abbonamenti";var beta=en?"DreaMint is in beta. At official launch, 15 days of ZERO DreaMint fees!":"DreaMint è in beta. Al lancio ufficiale, 15 giorni a ZERO commissioni DreaMint!";a.innerHTML='<div class="home-v2 fee-page" id="fee-shell"><section class="h2-sec fee-hero"><p class="h2k">'+kick+'</p><h1 class="h2-h fee-h1">'+t+'</h1><p class="h2-p">'+lede+'</p><p class="fee-banner">'+beta+'</p></section></div>';}})();</script>
+  <nav class="tabbar" id="tabbar"></nav>
+  <footer class="site-foot f2">
+    <div class="f2-inner">
+      <div class="foot-brand">
+        <a class="brand foot-logo" href="#/" data-link aria-label="DreaMint">
+          <img class="brand-logo brand-logo-light" src="/img/dreamint-logo-full.webp?v=20261110d" width="645" height="200" alt="" loading="lazy" />
+          <img class="brand-logo brand-logo-dark" src="/img/dreamint-logo-full-dark.webp?v=20261110d" width="645" height="200" alt="" loading="lazy" />
+        </a>
+        <p data-i18n="footer.tagline">Non è un NFT, non usa blockchain, non è un investimento. La rarità digitale non ha un valore garantito.</p>
+        <p class="f2-status"><span class="f2-pill"><span class="dot" aria-hidden="true"></span><span data-i18n="f.status">Stato: beta aperta</span></span><span class="f2-pill" data-i18n="f.paypal">Pagamenti PayPal diretti tra utenti</span></p>
+      </div>
+      <nav class="f2-cols" aria-label="Footer">
+        <div><h2 data-i18n="f.market">Marketplace</h2><ul>
+          <li><a href="#/gradate" data-i18n="f.graded">Gradate</a></li>
+          <li><a href="#/non-gradate" data-i18n="f.raw">Non gradate</a></li>
+          <li><a href="#/registra" data-i18n="f.sell">Vendi una carta</a></li>
+          <li><a href="#/album" data-i18n="f.collection">Album</a></li>
+        </ul></div>
+        <div><h2 data-i18n="f.platform">Piattaforma</h2><ul>
+          <li><a href="#/commissioni" data-i18n="f.fees">Commissioni e abbonamenti</a></li>
+          <li><a href="#/scala" data-i18n="f.rarity">Scala delle rarità</a></li>
+          <li><a href="#/riscatta" data-i18n="f.redeem">Riscatta una copia</a></li>
+          <li><a href="mailto:info@dreamint.it">info@dreamint.it</a></li>
+        </ul></div>
+        <div><h2 data-i18n="f.legal">Legale</h2><ul>
+          <li><a href="/legal/termini" data-i18n="footer.terms">Termini</a></li>
+          <li><a href="/legal/privacy" data-i18n="footer.privacy">Privacy</a></li>
+          <li><a href="/legal/regolamento-lancio" data-i18n="footer.rules">Regolamento di lancio</a></li>
+          <li><a href="/legal/faq" data-i18n="f.faq">FAQ</a></li>
+        </ul></div>
+      </nav>
+      <div class="f2-legal">
+        <p class="foot-disclaimer" data-i18n="footer.disclaimer">DreaMint non è affiliato a The Pokémon Company, Nintendo, Bandai, Disney, Wizards of the Coast, Konami. Tutti i marchi appartengono ai rispettivi proprietari.</p>
+        <p class="foot-credit" data-i18n="footer.credit">Le opere restano dei titolari (The Pokémon Company, Nintendo, Eiichiro Oda / Shueisha / Bandai, ecc.). La copia digitale delle graduate Pokémon usa l’arte ufficiale con la cornice di rarità DreaMint; le foto del venditore restano la prova della carta fisica.</p>
+      </div>
+    </div>
+  </footer>
+  <script>(function(){var s=["/js/i18n.js?v=20261112v9b","/js/strings-v2.js?v=20261112v7","/js/config.js?v=20261112v4","/js/photos.js?v=20261112ph1","/reveal.js?v=20261112v4","/js/motion.js?v=20261112v4","/js/share.js?v=20261112v9","/js/certificate.js?v=20261110e","/js/price-trend.js?v=20261112v4","/js/home-v2.js?v=20261112v9","/js/reveal-v2.js?v=20261112rv3","/js/trade-v9.js?v=20261112v9b","/app.js?v=20261112v9b"];function css(h){var f=document.createElement("link");f.rel="stylesheet";f.href=h;document.head.appendChild(f);}function go(){css("/fonts.css?v=20261110d");css("/certificate.css?v=20261110e");css("/price-trend.css?v=20261112v4");css("/reveal-v2.css?v=20261112rv3");/* reveal-v2 */css("/trade-v9.css?v=20261112v9");s.forEach(function(u,i){var e=document.createElement("script");e.src=u;e.async=false;if(i===s.length-1)e.onload=fx;document.body.appendChild(e);});}function fx(){var h=location.hash||"";if(h.indexOf("apri")===-1&&h.indexOf("scala")===-1&&h&&h!=="#"&&h!=="#/")return;/* animation libs only on home / reveal / rarity ladder */setTimeout(function(){["/js/gsap.min.js?v=20261110d","/js/ScrollTrigger.min.js?v=20261110d"].forEach(function(u){var e=document.createElement("script");e.src=u;e.async=false;document.body.appendChild(e);});},400);}var h=location.hash||"",home=!h||h==="#"||h==="#/";function later(){if(!home){go();return;}requestAnimationFrame(function(){setTimeout(go,0);});}if(document.readyState!=="loading")later();else document.addEventListener("DOMContentLoaded",later);})();</script>
+  <noscript><style>#home-shell .h2-stage{display:none}</style></noscript>
+</body>
+</html>
