@@ -4,6 +4,7 @@
  */
 
 import { lookupExternalCatalog } from "./catalog-search.js";
+import { isHiddenTest, loadViewer } from "./visibility.js";
 
 const WINDOWS_KV_PREFIX = "price:windows:";
 const EUR_GAMES = new Set(["pokemon", "magic", "yugioh"]);
@@ -488,10 +489,11 @@ async function getTrendHandler(request, env, url, helpers, J) {
   if (slabId && env.DB) {
     const row = await env.DB.prepare(
       `SELECT m.game, m.set_name, m.set_code, m.code_printed, m.code_normalized, m.name,
-              m.language, m.variant, m.catalog_image
+              m.language, m.variant, m.catalog_image, s.is_test
        FROM slabs s JOIN card_models m ON m.id = s.card_model_id WHERE s.id = ?`
     ).bind(slabId).first();
-    if (row) fields = { ...fields, ...row };
+    const viewer = await loadViewer(request, env);
+    if (row && !isHiddenTest(row, viewer)) fields = { ...fields, ...row };
   }
   const refresh = url.searchParams.get("refresh") !== "0";
   if (refresh && fields.game) {

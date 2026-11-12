@@ -4,6 +4,7 @@
 // attempt to move the deal off PayPal / off the site are saved with warning=1 + codes (warn, never block).
 import { enforceIdentRule } from "./rate-limit.js";
 import { isEmailVerified } from "./email-verify.js";
+import { canSeeTest, isHiddenTest, testVisibleSql } from "./visibility.js";
 
 export const MESSAGE_MAX = 1000;
 export const REPORT_REASONS = ["spam", "off_platform_payment", "scam", "abuse", "other"];
@@ -61,7 +62,7 @@ async function loadConversation(env, id) {
   return env.DB.prepare(
     `SELECT c.*, b.username AS buyer_username, s.username AS seller_username,
             l.status AS listing_status, l.kind AS listing_kind, l.price_cents AS listing_price_cents,
-            m.name AS card_name
+            m.name AS card_name, sl.is_test AS is_test
      FROM conversations c
      JOIN users b ON b.id = c.buyer_id
      JOIN users s ON s.id = c.seller_id
@@ -134,6 +135,8 @@ export async function handleChatRoutes(request, env, method, path, url, h) {
   if (startM && method === "POST") {
     const listing = await env.DB.prepare("SELECT id, slab_id, seller_id, status FROM listings WHERE id = ?").bind(startM[1]).first();
     if (!listing || !["active", "reserved", "paused"].includes(listing.status)) return err(404, "not_found", "Annuncio non disponibile");
+    const listedSlab = await env.DB.prepare("SELECT is_test FROM slabs WHERE id = ?").bind(listing.slab_id).first();
+    if (isHiddenTest(listedSlab, user)) return err(404, "not_found", "Annuncio non disponibile");
     if (listing.seller_id === user.id) return err(400, "own_listing", "È un tuo annuncio");
     if (await blockedBetween(env, user.id, listing.seller_id)) return err(403, "blocked", "Non puoi scrivere a questo utente");
     let c = await env.DB.prepare("SELECT id FROM conversations WHERE listing_id = ? AND buyer_id = ?").bind(listing.id, user.id).first();
@@ -166,7 +169,7 @@ export async function handleChatRoutes(request, env, method, path, url, h) {
        LEFT JOIN listings l ON l.id = c.listing_id
        LEFT JOIN slabs sl ON sl.id = c.slab_id
        LEFT JOIN card_models m ON m.id = sl.card_model_id
-       WHERE c.buyer_id = ? OR c.seller_id = ?
+       WHERE (c.buyer_id = ? OR c.seller_id = ?) AND ${testVisibleSql(user, "sl")}
        ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
        LIMIT 100`
     ).bind(user.id, user.id, user.id, user.id, user.id, user.id).all();
@@ -182,7 +185,7 @@ export async function handleChatRoutes(request, env, method, path, url, h) {
   if (!convM) return err(404, "not_found", "Non trovato");
   const c = await loadConversation(env, convM[1]);
   // IDOR: a conversation of other people is indistinguishable from a missing one.
-  if (!canAccess(c, user)) return err(404, "not_found", "Conversazione non trovata");
+  if (!canAccess(c, user) || isHiddenTest(c, user)) return err(404, "not_found", "Conversazione non trovata");
   const action = convM[2] || "";
   const participant = user.id === c.buyer_id || user.id === c.seller_id;
   const otherId = user.id === c.buyer_id ? c.seller_id : c.buyer_id;

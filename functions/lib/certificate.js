@@ -4,6 +4,7 @@
  */
 
 import { serialTotalFor } from "./mint-draw.js";
+import { canSeeTest, isHiddenTest, loadViewer } from "./visibility.js";
 import { parseImageDataUrl, sanitizeImageDataUrl, sniffImageType, safeImageResponse } from "./image-safety.js";
 
 const TIER_LABELS = {
@@ -466,7 +467,7 @@ export async function handleCertificateRoutes(request, env, path, url, helpers) 
 // client-side in js/share.js): current owner + server generation time + live verification link.
 async function socialStamp(env, request, id, J) {
   const slab = await loadCopyRow(env, id);
-  if (!hasDigitalCopy(slab)) return J({ error: "Copia digitale non trovata" }, 404);
+  if (!hasDigitalCopy(slab) || isHiddenTest(slab, await loadViewer(request, env))) return J({ error: "Copia digitale non trovata" }, 404);
   const copy = presentPublicCopy(slab, request);
   const verify = copy.share_url;
   return new Response(JSON.stringify({
@@ -484,14 +485,14 @@ async function socialStamp(env, request, id, J) {
 
 async function publicCopyJson(env, request, id, J) {
   const slab = await loadCopyRow(env, id);
-  if (!hasDigitalCopy(slab)) return J({ error: "Copia digitale non trovata" }, 404);
+  if (!hasDigitalCopy(slab) || isHiddenTest(slab, await loadViewer(request, env))) return J({ error: "Copia digitale non trovata" }, 404);
   return J({ copy: presentPublicCopy(slab, request) });
 }
 
 // Alias used by card pages: GET /api/cards/:id/verification (same live-owner payload as /api/copies/:id).
 async function cardVerification(env, request, id, J) {
   const slab = await loadCopyRow(env, id);
-  if (!hasDigitalCopy(slab)) return J({ error: "Copia digitale non trovata" }, 404);
+  if (!hasDigitalCopy(slab) || isHiddenTest(slab, await loadViewer(request, env))) return J({ error: "Copia digitale non trovata" }, 404);
   const copy = presentPublicCopy(slab, request);
   return J({
     copy,
@@ -524,7 +525,7 @@ function parseDataUrl(data) {
 
 async function serveCopyArt(env, request, id, J) {
   const slab = await loadCopyRow(env, id);
-  if (!hasDigitalCopy(slab)) return J({ error: "Copia digitale non trovata" }, 404);
+  if (!hasDigitalCopy(slab) || isHiddenTest(slab, await loadViewer(request, env))) return J({ error: "Copia digitale non trovata" }, 404);
 
   const headers = {
     "access-control-allow-origin": "*",
@@ -583,8 +584,8 @@ async function serveCopyArt(env, request, id, J) {
 
 async function getCertificate(request, env, id, url, helpers, J) {
   const slab = await loadCopyRow(env, id);
-  if (!hasDigitalCopy(slab)) return J({ error: "Certificato non disponibile" }, 404);
-  const user = helpers.getUser ? await helpers.getUser(request, env) : null;
+  const user = helpers.getUser ? await helpers.getUser(request, env) : await loadViewer(request, env);
+  if (!hasDigitalCopy(slab) || isHiddenTest(slab, user)) return J({ error: "Certificato non disponibile" }, 404);
   const codeParam = String(url.searchParams.get("code") || "").trim();
   const isOwner = user && (user.id === slab.digital_owner_id || (user.role === "admin"));
   let viaCode = false;
@@ -625,7 +626,7 @@ async function getCertificate(request, env, id, url, helpers, J) {
 async function regenerateCode(request, env, id, helpers, J) {
   const user = await helpers.requireUser(request, env);
   const slab = await loadCopyRow(env, id);
-  if (!hasDigitalCopy(slab)) return J({ error: "Certificato non disponibile" }, 404);
+  if (!hasDigitalCopy(slab) || isHiddenTest(slab, user)) return J({ error: "Certificato non disponibile" }, 404);
   if (user.id !== slab.digital_owner_id && user.role !== "admin") {
     return J({ error: "Solo il proprietario della copia può generare un nuovo codice" }, 403);
   }
@@ -649,6 +650,10 @@ async function redeemByCode(request, env, helpers, J) {
     return J({ error: found.error }, found.status || 400);
   }
   const slab = found.slab;
+  if (isHiddenTest(slab, user)) {
+    await recordAttempt(env, user.id, false);
+    return J({ error: "Nessuna copia digitale con questo certificato" }, 404);
+  }
   if (!hasDigitalCopy(slab) || !slab.transfer_code_hash) {
     await recordAttempt(env, user.id, false);
     return J({ error: "Codice non valido" }, 400);
@@ -699,6 +704,7 @@ async function submitClaim(request, env, helpers, J) {
   const found = await findSlabByCert(env, body.certificate_no, body.grader);
   if (found.error) return J({ error: found.error }, found.status || 400);
   const slab = found.slab;
+  if (isHiddenTest(slab, user)) return J({ error: "Nessuna copia digitale con questo certificato" }, 404);
   if (!hasDigitalCopy(slab)) return J({ error: "Questa carta non ha una copia digitale" }, 400);
   if (slab.digital_owner_id === user.id) return J({ error: "La copia è già tua" }, 400);
 
@@ -1071,7 +1077,8 @@ export function renderSharePageHtml(copy, request) {
 
 export async function renderPublicSharePage(request, env, id) {
   const slab = await loadCopyRow(env, id);
-  if (!hasDigitalCopy(slab)) {
+  const viewer = await loadViewer(request, env);
+  if (!hasDigitalCopy(slab) || isHiddenTest(slab, viewer)) {
     return new Response(
       `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Copia non trovata — DreaMint</title>
        <link rel="stylesheet" href="/styles.css?v=20261110e"></head>

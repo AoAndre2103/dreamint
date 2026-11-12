@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # DreaMint deploy (DO NOT RUN without Andrea's explicit OK).
 # Folder: this script's directory. MIGRATIONS = migrate-v1*.sql present in the folder.
-#   dreamint-deploy-v13b -> single deploy of everything after the live 77f2cc55 (email verification + v13):
+#   dreamint-deploy-v13b -> deploys on top of the live f749c0c8 (test-card admin visibility + share.js nu1, published 2026-11-12 21:45):
 #     QA fixes, ungraded/archive, A/B, M4 + video-sfida (v15), username/album (v16),
 #     two markets + cert search (v17), chat + /c/ live owners + social stamp (v18),
 #     reserved_sale_id safety (v19), no listing reservation until payment (v20),
 #     transfer-code rotation on every ownership change (v21), with the frontend.
 #     v13 is already applied on the live DB: its probe skips it. v19 is skipped if the v12 column exists.
 #   ./DEPLOY.sh --sync  first copies /workspace/gemint-beta/{public,functions,tests,migrate-v1*.sql,migrate-v2[0-9].sql} here.
-#   (dreamint-deploy-v13b-only-email = the variant already published as 77f2cc55.)
+#   Previous live baseline was 77f2cc55 (email verification). .live-base/ is a snapshot of f749c0c8 public/ (6223ccbd + share.js?v=20261112nu1).
 set -euo pipefail
 D="$(cd "$(dirname "$0")" && pwd)"; cd "$D"
 if [[ "${1:-}" == "--sync" ]]; then
@@ -20,7 +20,7 @@ if [[ "${1:-}" == "--sync" ]]; then
   echo "synced from $SRC"
 fi
 MIGRATIONS="${MIGRATIONS:-$(ls migrate-v1[3-9].sql migrate-v2[0-9].sql 2>/dev/null | sort -V | tr '\n' ' ')}"
-EXPECTED_PROD=77f2cc55
+EXPECTED_PROD=f749c0c8
 export WRANGLER_CACHE_DIR=/workspace/cf/.cache CLOUDFLARE_ACCOUNT_ID=ec79cd9d241edf28f5a5d59cb711e9af
 q() { npx wrangler d1 execute gemint-beta --remote --json --command "$1" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["results"])'; }
 has() { grep -q "$1" "functions/api/[[path]].js"; }
@@ -36,7 +36,7 @@ TS=$(date +%Y%m%d-%H%M)
 tar czf /workspace/backups-dreamint-$TS.tgz --exclude=node_modules --exclude=.wrangler --exclude=screens -C /workspace gemint-beta "$(basename "$D")"
 echo "backup: /workspace/backups-dreamint-$TS.tgz"
 
-# 2. production must still be 77f2cc55, or serve exactly the files of .live-base/ (snapshot of 915f3c70 = 77f2cc55 public)
+# 2. production must still be f749c0c8, or serve exactly the files of .live-base/ (snapshot of f749c0c8 public)
 npx wrangler whoami >/dev/null
 CUR=$(npx wrangler pages deployment list --project-name gemint-beta 2>/dev/null | grep -m1 Production | awk -F'│' '{print $2}' | tr -d ' ')
 echo "production: $CUR"

@@ -45,6 +45,7 @@ import { listingBlockedReason } from "../lib/listing-status.js";
 import { handleChatRoutes } from "../lib/chat.js";
 import { KINDS, PRICE_COLUMN, effectiveKind, canSellKind, listingValidSql, conflictSql, parseMarketPrice, certSearchValues, CERT_NORM_SQL } from "../lib/markets.js";
 import { normalizeUsername, normalizeQuery, likeEscape, USERNAME_RE } from "../lib/usernames.js";
+import { canSeeTest, testVisibleSql, isHiddenTest } from "../lib/visibility.js";
 import { validateChallengeVideo, videoResponse, VIDEO_MAX_BYTES, VIDEO_KV_PREFIX } from "../lib/challenge-video.js";
 import { sanitizeImageDataUrl, parseImageDataUrl, safeImageResponse, TEST_CARD_PNG_DATA_URL } from "../lib/image-safety.js";
 
@@ -208,7 +209,7 @@ async function route(request, env, path, url) {
   if (method === "GET" && path === "me") return me(request, env);
   if (method === "PATCH" && path === "me") return updateMe(request, env);
   if (method === "GET" && path === "users/search") return searchUsers(env, url);
-  if (method === "GET" && path === "search/cert") return searchCert(env, url);
+  if (method === "GET" && path === "search/cert") return searchCert(request, env, url);
   const marketM = path.match(/^cards\/([^/]+)\/market$/);
   if (method === "PATCH" && marketM) return updateMarket(request, env, marketM[1]);
   const userAlbumM = path.match(/^users\/([^/]+)\/album$/);
@@ -239,8 +240,8 @@ async function route(request, env, path, url) {
   const pub = path.match(/^public\/cards\/([^/]+)$/);
   if (method === "GET" && pub) return publicCard(env, pub[1]);
 
-  if (method === "GET" && path === "market") return listMarket(url, env);
-  if (method === "GET" && path === "recent") return listRecent(env);
+  if (method === "GET" && path === "market") return listMarket(request, url, env);
+  if (method === "GET" && path === "recent") return listRecent(request, env);
   if (method === "POST" && path === "listings") return createListing(request, env);
   const listingOne = path.match(/^listings\/([^/]+)$/);
   if (method === "PATCH" && listingOne) return updateListingPrice(request, env, listingOne[1]);
@@ -929,7 +930,7 @@ async function challengeVideoRow(env, slabId) {
 async function serveChallengeVideo(request, env, slabId) {
   const user = await getUser(request, env);
   const slab = await env.DB.prepare("SELECT * FROM slabs WHERE id = ?").bind(slabId).first();
-  if (!slab || !user) return json({ error: "Video non trovato" }, 404);
+  if (!slab || !user || isHiddenTest(slab, user)) return json({ error: "Video non trovato" }, 404);
   const row = await challengeVideoRow(env, slabId);
   // Privacy: the clip has the uploader's voice -> only the uploader (while still an owner) and admins.
   if (!row || !(user.role === "admin" || (row.user_id === user.id && isOwner(slab, user)))) return json({ error: "Video non trovato" }, 404);
@@ -1466,7 +1467,7 @@ async function myCards(request, env) {
      LEFT JOIN users do ON do.id = s.digital_owner_id
      LEFT JOIN listings li ON li.slab_id = s.id AND li.status IN ('active','reserved') AND COALESCE(li.kind,'fullset') = 'fullset'
      WHERE (s.physical_owner_id = ? OR (s.is_ungraded = 0 AND s.digital_owner_id = ?) OR (s.submitter_id = ? AND 0))
-       AND s.archived_at IS NULL
+       AND s.archived_at IS NULL AND ${testVisibleSql(user)}
      ORDER BY s.created_at DESC`
   ).bind(user.id, user.id, user.id).all();
   const list = rows.results || [];
@@ -1480,7 +1481,7 @@ async function archiveCard(request, env, id) {
   const user = await requireUser(request, env);
   const body = await readJson(request);
   const slab = await env.DB.prepare("SELECT * FROM slabs WHERE id = ?").bind(id).first();
-  if (!slab || slab.physical_owner_id !== user.id) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenTest(slab, user) || slab.physical_owner_id !== user.id) return json({ error: "Carta non trovata" }, 404);
   if (!slab.is_ungraded) return json({ error: "Per una carta gradata usa il trasferimento con codice" }, 400);
   if (slab.archived_at) return json({ error: "Carta già archiviata" }, 409);
   const reason = String((body && body.reason) || "sold_outside").trim().slice(0, 40) || "sold_outside";
@@ -1511,7 +1512,7 @@ async function archiveCard(request, env, id) {
 async function getCard(request, env, id) {
   const user = await getUser(request, env);
   const slab = await loadSlab(env, id);
-  if (!slab) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenTest(slab, user)) return json({ error: "Carta non trovata" }, 404);
   const priv = isOwner(slab, user);
   // SECURITY (M2): cards in review / rejected are visible only to the owner or an admin.
   if (!priv && (slab.status === "in_review" || slab.status === "rejected")) return json({ error: "Carta non trovata" }, 404);
@@ -1526,7 +1527,7 @@ async function getCard(request, env, id) {
 
 async function publicCard(env, id) {
   const slab = await loadSlab(env, id);
-  if (!slab) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenTest(slab, null)) return json({ error: "Carta non trovata" }, 404);
   if (slab.status === "in_review" || slab.status === "rejected") {
     return json({ error: "Questa carta non è pubblica" }, 404);
   }
@@ -1540,7 +1541,7 @@ async function servePhoto(request, env, slabId, kind, url) {
   if (!allowed.includes(kind)) return json({ error: "Foto sconosciuta" }, 404);
   const user = await getUser(request, env);
   const slab = await loadSlab(env, slabId);
-  if (!slab) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenTest(slab, user)) return json({ error: "Carta non trovata" }, 404);
   const owner = isOwner(slab, user);
   const admin = user && user.role === "admin";
   const publicKind = (kind === "front" || kind === "back" || kind === "cert") && slab.status !== "in_review" && slab.status !== "rejected";
@@ -1560,13 +1561,14 @@ async function servePhoto(request, env, slabId, kind, url) {
   });
 }
 
-async function listRecent(env) {
+async function listRecent(request, env) {
+  const user = await getUser(request, env);
   const rows = await env.DB.prepare(
     `SELECT s.id, s.grader, s.grade, s.is_ungraded, s.is_test, s.card_condition, s.status, s.created_at,
             m.game, m.set_name, m.code_printed, m.name AS card_name, m.language, m.catalog_image
      FROM slabs s
      JOIN card_models m ON m.id = s.card_model_id
-     WHERE s.status IN ('approved', 'listed') AND s.is_test = 0
+     WHERE s.status IN ('approved', 'listed') AND ${testVisibleSql(user)}
      ORDER BY s.created_at DESC
      LIMIT 12`
   ).all();
@@ -1581,6 +1583,7 @@ async function listRecent(env) {
       grader: r.grader,
       grade: r.grade,
       is_ungraded: !!r.is_ungraded,
+      is_test: !!r.is_test,
       card_condition: r.card_condition || null,
       created_at: r.created_at,
       catalog_image: r.catalog_image || null
@@ -1591,7 +1594,7 @@ async function listRecent(env) {
 async function openCard(request, env, id) {
   const user = await requireUser(request, env);
   const slab = await loadSlab(env, id);
-  if (!slab) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenTest(slab, user)) return json({ error: "Carta non trovata" }, 404);
   if (!isOwner(slab, user)) return json({ error: "Non puoi aprire questa carta" }, 403);
   if (slab.is_ungraded) return json({ error: "Le carte non gradate non hanno copia digitale né estrazione di rarità" }, 400);
   if (slab.status === "in_review") return json({ error: "La carta è ancora in verifica" }, 400);
@@ -1609,7 +1612,8 @@ async function openCard(request, env, id) {
 
 /* ---------------- marketplace ---------------- */
 
-async function listMarket(url, env) {
+async function listMarket(request, url, env) {
+  const user = await getUser(request, env);
   const section = (url.searchParams.get("section") || "").toLowerCase();
   let extra = "";
   if (section === "ungraded" || section === "non_gradate" || section === "raw") extra = " AND s.is_ungraded = 1";
@@ -1624,7 +1628,7 @@ async function listMarket(url, env) {
      JOIN card_models m ON m.id = s.card_model_id
      JOIN users u ON u.id = l.seller_id
      LEFT JOIN card_model_counters c ON c.card_model_id = s.card_model_id
-     WHERE l.status = 'active' AND ` + listingValidSql("l") + extra + `
+     WHERE l.status = 'active' AND ` + listingValidSql("l") + ` AND ${testVisibleSql(user)}` + extra + `
      ORDER BY l.created_at DESC
      LIMIT 100`
   ).all();
@@ -1666,7 +1670,7 @@ async function createListing(request, env) {
   const user = await requireUser(request, env);
   const body = await readJson(request);
   const slab = await loadSlab(env, body.slab_id);
-  if (!slab) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenTest(slab, user)) return json({ error: "Carta non trovata" }, 404);
   if (slab.physical_owner_id !== user.id) {
     return json({ error: "Puoi vendere solo una carta che possiedi" }, 403);
   }
@@ -1709,6 +1713,8 @@ async function updateListingPrice(request, env, listingId) {
   const body = await readJson(request);
   const listing = await env.DB.prepare("SELECT * FROM listings WHERE id = ?").bind(listingId).first();
   if (!listing) return json({ error: "Annuncio non trovato" }, 404);
+  const listedSlab = await env.DB.prepare("SELECT is_test FROM slabs WHERE id = ?").bind(listing.slab_id).first();
+  if (isHiddenTest(listedSlab, user)) return json({ error: "Annuncio non trovato" }, 404);
   if (listing.seller_id !== user.id) return json({ error: "Puoi modificare solo i tuoi annunci" }, 403);
   if (listing.status !== "active") return json({ error: "Questo annuncio non si può più modificare" }, 400);
   const parsed = parsePriceEuros(body.price_euros);
@@ -1725,7 +1731,7 @@ async function updateCardPrice(request, env, id) {
   const user = await requireUser(request, env);
   const body = await readJson(request);
   const slab = await env.DB.prepare("SELECT * FROM slabs WHERE id = ?").bind(id).first();
-  if (!slab) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenTest(slab, user)) return json({ error: "Carta non trovata" }, 404);
   if (slab.physical_owner_id !== user.id) return json({ error: "Puoi modificare solo una carta che possiedi" }, 403);
   if (slab.archived_at || !["in_review", "approved", "listed"].includes(slab.status)) {
     return json({ error: "Il prezzo non si può modificare in questo stato" }, 400);
@@ -1754,6 +1760,8 @@ async function requestBuy(request, env, listingId) {
   const body = await readJson(request);
   const listing = await env.DB.prepare("SELECT * FROM listings WHERE id = ?").bind(listingId).first();
   if (!listing || listing.status !== "active") return json({ error: "Annuncio non disponibile" }, 404);
+  const listedSlab = await env.DB.prepare("SELECT is_test FROM slabs WHERE id = ?").bind(listing.slab_id).first();
+  if (!listedSlab || isHiddenTest(listedSlab, user)) return json({ error: "Annuncio non disponibile" }, 404);
   if (listing.seller_id === user.id) return json({ error: "Non puoi acquistare un tuo annuncio" }, 400);
   const existing = await env.DB.prepare(
     "SELECT id FROM sales WHERE listing_id = ? AND buyer_id = ? AND status IN ('requested','accepted','paid','shipped')"
@@ -1866,7 +1874,7 @@ async function mySales(request, env) {
      JOIN card_models m ON m.id = sl.card_model_id
      JOIN users seller ON seller.id = sa.seller_id
      JOIN users buyer ON buyer.id = sa.buyer_id
-     WHERE sa.seller_id = ? OR sa.buyer_id = ?
+     WHERE (sa.seller_id = ? OR sa.buyer_id = ?) AND ${testVisibleSql(user, "sl")}
      ORDER BY sa.created_at DESC`
   ).bind(user.id, user.id).all();
   const days = Number(env.PAYPAL_AUTOCOMPLETE_DAYS || 14);
@@ -1908,6 +1916,8 @@ async function saleAction(request, env, saleId, action) {
   const user = await requireUser(request, env);
   const sale = await env.DB.prepare("SELECT * FROM sales WHERE id = ?").bind(saleId).first();
   if (!sale) return json({ error: "Richiesta non trovata" }, 404);
+  const saleSlab = await env.DB.prepare("SELECT is_test FROM slabs WHERE id = ?").bind(sale.slab_id).first();
+  if (isHiddenTest(saleSlab, user)) return json({ error: "Richiesta non trovata" }, 404);
   const body = request.headers.get("content-type")?.includes("json") ? await readJson(request).catch(() => ({})) : {};
 
   if (action === "cancel") {
@@ -2566,7 +2576,7 @@ async function updateMarket(request, env, id) {
   const user = await requireUser(request, env);
   const body = await readJson(request) || {};
   const slab = await loadSlab(env, id);
-  if (!slab || !(user.id === slab.physical_owner_id || user.id === slab.digital_owner_id)) return json({ error: "Carta non trovata", code: "not_found" }, 404);
+  if (!slab || isHiddenTest(slab, user) || !(user.id === slab.physical_owner_id || user.id === slab.digital_owner_id)) return json({ error: "Carta non trovata", code: "not_found" }, 404);
   if (slab.is_ungraded) return json({ error: "Le carte non gradate hanno un solo prezzo", code: "graded_only" }, 400);
   if (slab.archived_at || !["approved", "listed", "in_transit"].includes(slab.status)) return json({ error: "Questa carta non può essere messa in vendita ora", code: "not_available" }, 400);
   if (!slab.opened_at) return json({ error: "Apri prima l'estrazione della rarità", code: "not_opened" }, 400);
@@ -2632,13 +2642,14 @@ function publicOwnerRef(username, albumPublic) {
 }
 
 // GET /api/search/cert?q=<grading certificate number>
-async function searchCert(env, url) {
+async function searchCert(request, env, url) {
+  const user = await getUser(request, env);
   const values = certSearchValues(url && url.searchParams.get("q"));
   if (!values.length) return json({ error: "Inserisci il numero di certificato (4-40 lettere o cifre)", code: "query_too_short" }, 400);
   const certMatch = values.map(() => `${CERT_NORM_SQL} = ?`).join(" OR ");
   const rows = await env.DB.prepare(
     `SELECT s.id, s.grader, s.grade, s.certificate_no, s.rarity_tier, s.serial_number, s.serial_total_at_assignment, s.opened_at,
-            s.physical_owner_id, s.digital_owner_id, m.name AS card_name, m.set_name, m.code_printed, m.language, m.game,
+            s.physical_owner_id, s.digital_owner_id, s.is_test, m.name AS card_name, m.set_name, m.code_printed, m.language, m.game,
             c.registered_count, po.username AS po_username, po.album_public AS po_public,
             do.username AS do_username, do.album_public AS do_public
      FROM slabs s
@@ -2646,7 +2657,7 @@ async function searchCert(env, url) {
      LEFT JOIN card_model_counters c ON c.card_model_id = s.card_model_id
      LEFT JOIN users po ON po.id = s.physical_owner_id
      LEFT JOIN users do ON do.id = s.digital_owner_id
-     WHERE s.is_ungraded = 0 AND s.is_test = 0 AND s.archived_at IS NULL AND s.status IN ('approved','listed','in_transit')
+     WHERE s.is_ungraded = 0 AND ${testVisibleSql(user)} AND s.archived_at IS NULL AND s.status IN ('approved','listed','in_transit')
        AND (${certMatch})
      ORDER BY s.created_at DESC
      LIMIT 10`
@@ -2665,7 +2676,7 @@ async function searchCert(env, url) {
       const opened = !!r.opened_at;
       return {
         card: { id: r.id, name: r.card_name, set_name: r.set_name, code_printed: r.code_printed, language: r.language, game: r.game,
-                grader: r.grader, grade: r.grade, certificate_no: r.certificate_no },
+                grader: r.grader, grade: r.grade, certificate_no: r.certificate_no, is_test: !!r.is_test },
         opened,
         digital: opened ? { serial_number: r.serial_number || null, serial_total: serialTotalFor(r), rarity_tier: r.rarity_tier || null,
                             rarity_label: r.rarity_tier ? (TIER_LABELS[r.rarity_tier] || null) : null } : null,
@@ -2700,24 +2711,26 @@ async function userAlbum(request, env, rawName) {
   let name;
   try { name = decodeURIComponent(rawName).trim().toLowerCase(); } catch (e) { return notFound(); }
   if (!USERNAME_RE.test(name)) return notFound();
+  const viewer = await getUser(request, env);
+  const albumWhere = "s.status IN ('approved','listed') AND s.archived_at IS NULL AND " + testVisibleSql(viewer);
   // Missing user, private album and NULL username give the same 404.
   const u = await env.DB.prepare("SELECT id, username FROM users WHERE lower(username) = ? AND username IS NOT NULL AND album_public = 1")
     .bind(name).first();
   if (!u) return notFound();
   const rows = await env.DB.prepare(
-    `SELECT s.id, s.is_ungraded, s.grader, s.grade, s.card_condition, s.rarity_tier, s.serial_number, s.serial_total_at_assignment,
+    `SELECT s.id, s.is_ungraded, s.is_test, s.grader, s.grade, s.card_condition, s.rarity_tier, s.serial_number, s.serial_total_at_assignment,
             s.opened_at, s.status, m.game, m.name AS card_name, m.set_name, m.code_printed, m.language, m.variant,
             c.registered_count, li.price_cents AS listing_price_cents
      FROM slabs s
      JOIN card_models m ON m.id = s.card_model_id
      LEFT JOIN card_model_counters c ON c.card_model_id = s.card_model_id
      LEFT JOIN listings li ON li.slab_id = s.id AND li.status = 'active' AND li.seller_id = s.physical_owner_id
-     WHERE s.physical_owner_id = ? AND ${ALBUM_CARD_WHERE}
+     WHERE s.physical_owner_id = ? AND ${albumWhere}
      ORDER BY s.created_at DESC
      LIMIT ${ALBUM_MAX_CARDS}`
   ).bind(u.id).all();
   const list = rows.results || [];
-  const cnt = await env.DB.prepare(`SELECT COUNT(*) AS n FROM slabs s WHERE s.physical_owner_id = ? AND ${ALBUM_CARD_WHERE}`).bind(u.id).first();
+  const cnt = await env.DB.prepare(`SELECT COUNT(*) AS n FROM slabs s WHERE s.physical_owner_id = ? AND ${albumWhere}`).bind(u.id).first();
   const cards = list.map((r) => {
     const graded = !r.is_ungraded;
     const revealed = graded && !!r.opened_at; // rarity/serial are public only after opening (as in presentSlab)
@@ -2732,6 +2745,7 @@ async function userAlbum(request, env, rawName) {
       language: r.language,
       variant: r.variant,
       is_ungraded: !graded,
+      is_test: !!r.is_test,
       type: graded ? "graded" : "ungraded",
       grader: graded ? r.grader : null,
       grade: graded ? r.grade : null,

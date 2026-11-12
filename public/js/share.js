@@ -86,7 +86,7 @@
     var label = data.rarity_label || TIER_LABELS[tier] || "Copia digitale";
     var name = data.name || data.card_name || "Carta";
     var serial = serialLabel(data);
-    var url = (data.share_url || (location.origin + "/c/" + (data.id || ""))).replace(/^https?:\/\//, "");
+    var url = "dreamint.it";
 
     var grd = g.createLinearGradient(0, 0, 0, h);
     if (tier === "mitica") { grd.addColorStop(0, "#0a0610"); grd.addColorStop(1, "#140810"); }
@@ -260,7 +260,7 @@
       g.fillText(String(data.watermark), w / 2, urlY - 36);
     }
     g.fillStyle = "#F4EFE4"; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(String(data.url || "dreamint.it").replace(/^https?:\/\//, ""), w / 2, urlY);
+    g.fillText("dreamint.it", w / 2, urlY);
     return c;
   }
   function hexA(hex, a) {
