@@ -53,3 +53,10 @@ Nuova animazione di apertura delle carte gradate. Sui retri c’è il logo DM uf
 - `POST /api/cards`: niente richieste doppie (bottone bloccato + dedup server 5 minuti, risposta `200 {card, dedup:true}`); migrate-v22 (`slabs.submit_fingerprint`).
 - Email di verifica e notifiche admin a tutti gli admin del DB + NOTIFY_EMAIL (dedup, una mail per destinatario, batch Resend).
 - Assistenza: form per utenti loggati, rate limit 3/h utente e 10/h IP, email agli admin con reply-to, pannello admin apri/chiudi; migrate-v23 (`support_requests`).
+
+## v24 — 2026-11-13 (deploy 97fcdb59)
+- Username obbligatorio all'iscrizione; `/api/me` espone `needs_username`; per gli account esistenti senza username un passaggio bloccante (tranne logout, pagine legali, `/c/`, Assistenza) con controllo disponibilità in tempo reale (`GET /api/users/username-available`, rate limit 60/min).
+- Avviso «aggiungi PayPal» (con link al proprio account) solo al proprietario della carta/album; visitatori e admin vedono al massimo «Il venditore non ha ancora attivato i pagamenti», senza link. Nella pagina vendite il compratore non vede più l'invito ad aggiungere PayPal.
+- Carte non gradate: retro visibile nell'album (miniatura) e nella pagina carta (flip al click/tasto Invio/Spazio); segnaposto pulito se il retro manca. Le foto restano soggette a album privato, carte test e rimozione admin.
+- Dati: richieste duplicate della carta di Naso archiviate (`archived_reason='duplicate_submission'`), username `prof.oak` e `naso` assegnati ai due admin (con audit_logs).
+- Nessuna migrazione nuova.

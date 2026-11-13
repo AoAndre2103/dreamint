@@ -544,9 +544,52 @@
       img = cat ? '<img class="raw-photo" src="' + esc(cat) + '" alt="' + esc(tr("raw.refAlt", { name: cardTitle(c) })) + '" loading="lazy">' : '<span class="raw-nophoto">' + esc(tr("raw.noPhoto")) + "</span>";
     }
     var isRef = !custom && !!(c.photos && c.photos.front === false) && !!cat;
+    // v24: ungraded cards also show the seller's back photo (album: mini inset; card page: flip).
+    var back = rawBackHtml(c, id, opts);
+    if (opts.flip) {
+      return '<figure class="raw-card raw-flip' + (isRef ? " is-ref" : "") + '" role="button" tabindex="0" aria-pressed="false" aria-label="' + esc(tr("raw.showBack")) + '" data-raw-flip>' +
+        '<div class="raw-flip-inner"><div class="raw-card-img raw-face raw-face-front">' + img + '<span class="raw-ref-tag">' + esc(tr("raw.refTag")) + "</span></div>" +
+        '<div class="raw-card-img raw-face raw-face-back">' + back + "</div></div>" +
+        '<figcaption class="raw-flip-hint">↻ ' + esc(tr("raw.showBack")) + "</figcaption></figure>";
+    }
     return '<figure class="raw-card' + (isRef ? " is-ref" : "") + (opts.album ? " is-album" : "") + '">' +
-      '<div class="raw-card-img">' + img + '<span class="raw-ref-tag">' + esc(tr("raw.refTag")) + "</span></div>" +
+      '<div class="raw-card-img">' + img + '<span class="raw-ref-tag">' + esc(tr("raw.refTag")) + "</span>" +
+      (opts.album ? '<span class="raw-back-mini" title="' + esc(tr("gal.back")) + '">' + back + "</span>" : "") + "</div>" +
       (opts.album ? '<figcaption class="raw-album-tag">' + esc(opts.albumTag || tr("raw.album")) + "</figcaption>" : "") + "</figure>";
+  }
+  function rawBackHtml(c, id, opts) {
+    var ph = '<span class="raw-back-ph">' + esc(tr("raw.backMissing")) + "</span>";
+    var missing = c.missing_back === true || (c.photos && c.photos.back === false);
+    if (missing || !id) return ph;
+    var src = (c.back_url && opts.album && c.back_url.indexOf("?") === -1 ? c.back_url + "?w=224" : c.back_url) || photoSrc(id, "back", opts.album ? 224 : 448);
+    return '<img class="raw-back-photo" src="' + esc(src) + '" alt="' + esc(tr("gal.back") + " — " + cardTitle(c)) + '" loading="lazy">';
+  }
+  // CSP forbids inline handlers: swap a broken back photo for the clean placeholder (capture phase).
+  document.addEventListener("error", function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== "IMG" || !t.classList || !t.classList.contains("raw-back-photo")) return;
+    var ph = document.createElement("span");
+    ph.className = "raw-back-ph";
+    ph.textContent = tr("raw.backMissing");
+    t.replaceWith(ph);
+  }, true);
+  function bindRawFlip(root) {
+    (root || document).querySelectorAll("[data-raw-flip]").forEach(function (f) {
+      if (f.getAttribute("data-flip-bound")) return;
+      f.setAttribute("data-flip-bound", "1");
+      function toggle() {
+        var on = !f.classList.contains("is-flipped");
+        f.classList.toggle("is-flipped", on);
+        f.setAttribute("aria-pressed", on ? "true" : "false");
+        f.setAttribute("aria-label", tr(on ? "raw.showFront" : "raw.showBack"));
+        var hint = f.querySelector(".raw-flip-hint");
+        if (hint) hint.textContent = "↻ " + tr(on ? "raw.showFront" : "raw.showBack");
+      }
+      f.addEventListener("click", toggle);
+      f.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); toggle(); }
+      });
+    });
   }
   var USERNAME_RE = /^[a-z0-9_.]{3,20}$/;
   function publicAlbumsOn() {
@@ -558,6 +601,60 @@
   }
   function normalizeUsername(v) { return String(v || "").trim().toLowerCase(); }
   function usernameValid(v) { return USERNAME_RE.test(normalizeUsername(v)); }
+  function pageUsernameGate() {
+    var u = state.user || {};
+    return '<section class="panel username-gate" style="max-width:560px;margin:24px auto"><h1>' + esc(tr("gate.title")) + "</h1>" +
+      "<p>" + esc(tr("gate.lede", { name: u.display_name || "" })) + "</p>" +
+      '<form id="username-gate-form" novalidate><label class="field">' + esc(tr("auth.username")) +
+      '<input name="username" id="gate-username" type="text" required minlength="3" maxlength="20" autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="' + esc(tr("auth.usernamePh")) + '"></label>' +
+      '<p class="dim" id="gate-hint" aria-live="polite">' + esc(tr("gate.hint")) + "</p>" +
+      '<p class="error" id="gate-err" hidden></p>' +
+      '<p class="row-actions"><button class="btn primary" type="submit" id="gate-save" disabled>' + esc(tr("gate.save")) + "</button>" +
+      '<button class="btn ghost" type="button" id="gate-logout">' + esc(tr("gate.logout")) + "</button></p></form>" +
+      '<p class="dim">' + esc(tr("gate.why")) + ' <a href="/legal/privacy">' + esc(tr("footer.privacy")) + "</a> · " +
+      '<a href="#/assistenza" data-link>' + esc(tr("nav.support")) + "</a></p></section>";
+  }
+  function bindUsernameGate() {
+    var f = document.getElementById("username-gate-form");
+    if (!f) return;
+    var input = document.getElementById("gate-username"), hint = document.getElementById("gate-hint"),
+      err = document.getElementById("gate-err"), save = document.getElementById("gate-save"), timer = null, seq = 0, okName = "";
+    function setHint(text, cls) { hint.textContent = text; hint.className = cls || "dim"; }
+    function check() {
+      var v = normalizeUsername(input.value);
+      okName = ""; save.disabled = true; err.hidden = true;
+      if (!v) { setHint(tr("gate.hint")); return; }
+      if (!usernameValid(v)) { setHint(tr("user.usernameInvalid"), "error"); return; }
+      var my = ++seq;
+      setHint(tr("gate.checking"));
+      fetch("/api/users/username-available?u=" + encodeURIComponent(v), { credentials: "include" })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { s: r.status, d: d }; }); })
+        .then(function (x) {
+          if (my !== seq) return;
+          if (x.s === 429) { setHint(tr("gate.rate"), "error"); return; }
+          if (x.d.available) { okName = x.d.username || v; save.disabled = false; setHint(tr("gate.free", { name: okName }), "ok"); }
+          else setHint(x.d.code === "username_taken" ? tr("user.usernameTaken") : (x.d.error || tr("user.usernameInvalid")), "error");
+        }).catch(function () { if (my === seq) setHint(tr("gate.hint")); });
+    }
+    input.addEventListener("input", function () { if (timer) clearTimeout(timer); timer = setTimeout(check, 350); });
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!okName || save.disabled) return;
+      save.disabled = true;
+      api("me", { method: "PATCH", body: { username: okName } }).then(function (d) {
+        state.user = d.user || Object.assign({}, state.user, { username: okName, needs_username: false });
+        dmToast(tr("gate.done", { name: okName }));
+        render();
+      }).catch(function (e2) {
+        save.disabled = false;
+        err.hidden = false; err.textContent = usernameErrorMessage(e2);
+      });
+    });
+    document.getElementById("gate-logout").onclick = function () {
+      api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; go("#/"); render(); });
+    };
+    setTimeout(function () { try { input.focus(); } catch (e) {} }, 50);
+  }
   function usernameErrorMessage(err) {
     var code = (err && (err.code || err.message)) || "";
     if (code === "username_invalid" || /username_invalid/.test(code)) return tr("user.usernameInvalid");
@@ -747,7 +844,7 @@
       (opts.owner && c.full_set === "yes" ? '<span class="pill pill-leggendaria">' + tr("pill.fullSet") + "</span>" : opts.owner && c.full_set === "transferring" ? '<span class="pill warn">' + tr("pill.fullSetTransfer") + "</span>" : "") +
       (listed && price != null ? "<span>" + euros(price) + "</span>" : "") +
       "</div>" +
-      (opts.owner && (c.listing_blocked_reason === "no_paypal" || needsPaypalToSell(c)) ? '<div class="tile-paypal">' + paypalNeededHtml() + "</div>" : "") +
+      (opts.owner && !opts.public && (isOwnCard(c) || !c.physical_owner_id) && (c.listing_blocked_reason === "no_paypal" || needsPaypalToSell(c)) ? '<div class="tile-paypal">' + paypalNeededHtml() + "</div>" : "") +
       (opts.owner && c.listing_blocked_reason === "no_price" ? '<p class="dim tile-noprice">' + esc(tr("card.noPrice")) + "</p>" : "") +
       "</div></a>";
   }
@@ -1457,8 +1554,16 @@
     return c.listing_status === "active" || c.listing_status === "reserved" ||
       !!(c.listing_id && (c.status === "listed" || c.listing_status));
   }
+  // v24: the PayPal reminder (with the link to *my* account) is only for the card's owner.
+  function isOwnCard(c) {
+    return !!(c && state.user && c.physical_owner_id && c.physical_owner_id === state.user.id);
+  }
+  function sellerNoPaypalNote() {
+    return '<p class="dim seller-no-paypal">' + esc(tr("card.sellerNoPaypal")) + "</p>";
+  }
   function needsPaypalToSell(c) {
     if (!c || !state.user || state.user.paypal_email) return false;
+    if (!isOwnCard(c)) return false;
     if (c.archived_at) return false;
     if (isActivelyListed(c)) return false;
     var hasPrice = Number(c.asking_price_cents || 0) > 0 || Number(c.listing_price_cents || 0) > 0;
@@ -1641,7 +1746,7 @@
   function pageCard(c) {
     var serial = c.serial_number ? serialFmt(c.serial_number, c.serial_total) : "";
     var html = '<section class="card-hero"><div class="slab-stage' + (c.is_ungraded ? " raw-stage" : "") + '">' +
-      (c.is_ungraded ? rawCardFigure(c, { sizes: "(max-width:860px) 70vw, 280px" }) : slabFrame({
+      (c.is_ungraded ? rawCardFigure(c, { sizes: "(max-width:860px) 70vw, 280px", flip: true }) : slabFrame({
         img: digitalArt(c).img,
         srcset: digitalArt(c).srcset,
         sizes: "(max-width:860px) 70vw, 280px",
@@ -1710,8 +1815,10 @@
         '<p class="error" id="price-err" hidden></p><p class="ok" id="price-ok" hidden></p>' +
         '<button class="btn" type="submit">' + tr("card.updatePrice") + "</button></form>";
     }
-    if (needsPaypalToSell(c) || c.listing_blocked_reason === "no_paypal") {
+    if (isOwnCard(c) && (needsPaypalToSell(c) || c.listing_blocked_reason === "no_paypal")) {
       html += paypalNeededHtml();
+    } else if (!isOwnCard(c) && c.listing_blocked_reason === "no_paypal") {
+      html += sellerNoPaypalNote();
     } else if (c.can_list && !c.listing_id) {
       var v9form = (window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) ? window.DreaMintTradeV9.listFormHtml(c) : null;
       if (v9form) {
@@ -1729,6 +1836,7 @@
     html += "</div></section>";
     var galFlags = Object.assign({}, c.photos || {});
     if (c.missing_back) galFlags.back = false;
+    if (c.is_ungraded && galFlags.back === false) galFlags.backPlaceholder = true;
     html += photoGallery(c.id, galFlags, c.is_ungraded ? tr("card.photosTitle") : tr("card.photosProof"));
     if (c.commit_hash && !c.is_ungraded) {
       html += '<section class="panel"><h3>' + tr("card.extract") + "</h3>" +
@@ -1892,7 +2000,9 @@
       '<div class="product-thumbs">' + kinds.map(function (k) {
         return '<button type="button" class="product-thumb' + (k[0] === main ? " on" : "") + '" data-kind="' + k[0] + '" aria-label="' + esc(k[1]) + '">' +
           photoImg(cardId, k[0], "72px") + "<span>" + esc(k[1]) + "</span></button>";
-      }).join("") + "</div></div>" +
+      }).join("") +
+      (flags.backPlaceholder ? '<span class="product-thumb is-missing" aria-label="' + esc(tr("raw.backMissing")) + '"><span class="raw-back-ph">' + esc(tr("raw.backMissing")) + "</span><span>" + esc(tr("gal.back")) + "</span></span>" : "") +
+      "</div></div>" +
       '<div class="lightbox" id="lightbox" hidden><button type="button" class="lightbox-close" aria-label="' + esc(tr("gal.close")) + '">×</button>' +
       '<img id="lb-img" alt="' + esc(tr("gal.full")) + '"></div></section>';
   }
@@ -2205,7 +2315,7 @@
         actions += '<p class="dim">' + tr("sales.paypalHint") + "</p>";
       }
       if (unpaid && !s.seller_paypal_email) {
-        actions += paypalNeededHtml();
+        actions += isSeller ? paypalNeededHtml() : sellerNoPaypalNote();
       }
       if (isSeller && s.status === "paid" && s.kind === "digital") {
         actions += '<p class="notice">' + tr("sales.paidHintDigital") + "</p>";
@@ -2973,6 +3083,14 @@
     renderChrome();
     var r = route();
     var p = r.parts;
+    // v24: accounts without a username must choose one before using the site
+    // (login/signup and Assistenza stay reachable; legal pages and /c/ are not SPA routes).
+    if (state.user && !state.user.username && ["accedi", "registrati", "assistenza"].indexOf(p[0] || "") === -1) {
+      document.title = tr("gate.title") + " — DreaMint";
+      $app.innerHTML = pageUsernameGate();
+      bindUsernameGate();
+      return;
+    }
     try {
       if (window.DreaMintCert && window.DreaMintCert.handleRoute) {
         var handled = await window.DreaMintCert.handleRoute({
@@ -3126,6 +3244,7 @@
         $app.innerHTML = '<div class="skel" style="min-height:320px"></div>';
         var one = await api("cards/" + p[1]);
         $app.innerHTML = pageCard(one.card);
+        bindRawFlip($app);
         // reveal-v2 hook: copia digitale con cornice rarità / apertura premium (logica in /js/reveal-v2.js)
         if (window.DreamintRevealV2) window.DreamintRevealV2.enhanceCard(one.card, state.user);
         bindShareRow(one.card, null);

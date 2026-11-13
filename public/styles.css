@@ -1720,3 +1720,22 @@ html[data-theme="light"] .rare-feature figcaption strong.tier-mitica {
 body.mob-nav-open { overflow: hidden; }
 .fees-hint { margin: 8px 0 0; }
 .account-fees { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+/* v24: back photo of ungraded cards (album mini inset + card page flip) */
+.raw-back-mini { position: absolute; right: 6px; bottom: 6px; width: 34%; aspect-ratio: 63 / 88; border-radius: 6px; overflow: hidden;
+  border: 2px solid rgba(255,255,255,.85); box-shadow: 0 2px 8px rgba(0,0,0,.35); background: #142222; display: flex; align-items: center; justify-content: center; z-index: 2; }
+.raw-back-mini img { width: 100%; height: 100%; object-fit: cover; }
+.raw-back-ph { display: flex; align-items: center; justify-content: center; text-align: center; width: 100%; height: 100%; padding: 4px;
+  font-size: 11px; line-height: 1.2; color: var(--muted, #9aa); background: repeating-linear-gradient(135deg, rgba(127,127,127,.08) 0 6px, transparent 6px 12px); }
+.raw-back-mini .raw-back-ph { font-size: 9px; }
+.raw-flip { cursor: pointer; perspective: 1200px; margin: 0; outline: none; width: 100%; }
+.raw-flip .raw-flip-inner { width: 100%; max-width: 280px; }
+.raw-flip:focus-visible .raw-flip-inner { outline: 3px solid var(--accent, #2bd49a); outline-offset: 4px; border-radius: 12px; }
+.raw-flip-inner { position: relative; transition: transform .55s ease; transform-style: preserve-3d; }
+.raw-flip.is-flipped .raw-flip-inner { transform: rotateY(180deg); }
+.raw-flip .raw-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.raw-flip .raw-face-back { position: absolute; inset: 0; transform: rotateY(180deg); }
+.raw-flip .raw-face-back img { width: 100%; height: 100%; object-fit: contain; }
+.raw-flip-hint { text-align: center; font-size: 12px; margin-top: 8px; opacity: .8; }
+.product-thumb.is-missing { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 72px; min-height: 96px; }
+@media (prefers-reduced-motion: reduce) { .raw-flip-inner { transition: none; } }

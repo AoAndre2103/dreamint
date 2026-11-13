@@ -325,7 +325,21 @@
     "support.close": "Segna come chiusa",
     "support.reopen": "Riapri",
     "support.none": "Nessuna richiesta.",
-    "support.closedBy": "Chiusa da {name} il {date}"
+    "support.closedBy": "Chiusa da {name} il {date}",
+    "card.sellerNoPaypal": "Il venditore non ha ancora attivato i pagamenti.",
+    "raw.backMissing": "Retro non disponibile",
+    "raw.showBack": "Mostra il retro",
+    "raw.showFront": "Mostra il fronte",
+    "gate.title": "Scegli il tuo username",
+    "gate.lede": "Ciao {name}! Da oggi ogni account DreaMint ha uno username: è il nome con cui gli altri collezionisti ti trovano e il tuo indirizzo, tipo dreamint.it/#/u/tuonome. Sceglilo per continuare.",
+    "gate.hint": "3–20 caratteri: lettere minuscole, numeri, punto e trattino basso.",
+    "gate.checking": "Controllo disponibilità…",
+    "gate.free": "«{name}» è libero.",
+    "gate.rate": "Troppi controlli: aspetta un minuto e riprova.",
+    "gate.save": "Conferma username",
+    "gate.logout": "Esci",
+    "gate.done": "Fatto! Ora sei @{name}.",
+    "gate.why": "Puoi cambiarlo più avanti dal tuo account. Il tuo album resta privato finché non scegli di renderlo pubblico."
   });
   I.extend("en", {
     "meta.title": "DreaMint — TCG card marketplace. Graded cards become unique.",
@@ -635,6 +649,20 @@
     "support.close": "Mark as closed",
     "support.reopen": "Reopen",
     "support.none": "No requests.",
-    "support.closedBy": "Closed by {name} on {date}"
+    "support.closedBy": "Closed by {name} on {date}",
+    "card.sellerNoPaypal": "The seller has not enabled payments yet.",
+    "raw.backMissing": "Back not available",
+    "raw.showBack": "Show the back",
+    "raw.showFront": "Show the front",
+    "gate.title": "Choose your username",
+    "gate.lede": "Hi {name}! Every DreaMint account now has a username: it is how other collectors find you, and your address, like dreamint.it/#/u/yourname. Pick one to continue.",
+    "gate.hint": "3–20 characters: lowercase letters, numbers, period and underscore.",
+    "gate.checking": "Checking availability…",
+    "gate.free": "“{name}” is available.",
+    "gate.rate": "Too many checks: wait a minute and try again.",
+    "gate.save": "Confirm username",
+    "gate.logout": "Log out",
+    "gate.done": "Done! You are now @{name}.",
+    "gate.why": "You can change it later from your account. Your album stays private until you choose to make it public."
   });
 })(window);

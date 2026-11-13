@@ -210,6 +210,7 @@ async function route(request, env, path, url) {
   if (method === "GET" && path === "me") return me(request, env);
   if (method === "PATCH" && path === "me") return updateMe(request, env);
   if (method === "GET" && path === "users/search") return searchUsers(request, env, url);
+  if (method === "GET" && path === "users/username-available") return usernameAvailable(request, env, url);
   if (method === "GET" && path === "search/cert") return searchCert(request, env, url);
   const marketM = path.match(/^cards\/([^/]+)\/market$/);
   if (method === "PATCH" && marketM) return updateMarket(request, env, marketM[1]);
@@ -478,6 +479,7 @@ function publicUser(u) {
     paypal_email: u.paypal_email || "",
     email_verified: isEmailVerified(u),
     username: u.username || null,
+    needs_username: !u.username, // v24: accounts created before v16 must pick one (frontend gate)
     album_public: !!u.album_public
   };
 }
@@ -2859,6 +2861,19 @@ async function usernameTaken(env, username, exceptUserId) {
     .bind(username, exceptUserId || "").first();
   return !!row;
 }
+// v24: live availability check for the signup form and the "choose a username" gate.
+async function usernameAvailable(request, env, url) {
+  const viewer = await getUser(request, env);
+  const un = normalizeUsername(String((url && url.searchParams.get("u")) || ""));
+  if (!un.ok) return json({ available: false, code: "username_invalid", error: un.error }, 200, { "cache-control": "no-store" });
+  if (viewer && viewer.username && viewer.username.toLowerCase() === un.username) {
+    return json({ available: true, username: un.username, current: true }, 200, { "cache-control": "no-store" });
+  }
+  const taken = await usernameTaken(env, un.username, viewer ? viewer.id : null);
+  return json(taken ? { available: false, username: un.username, code: "username_taken" } : { available: true, username: un.username },
+    200, { "cache-control": "no-store" });
+}
+
 function usernameTakenResponse() {
   return json({ error: "Questo username è già in uso", code: "username_taken" }, 409);
 }
