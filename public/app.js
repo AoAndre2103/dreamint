@@ -623,6 +623,48 @@
       '<p class="dim">' + esc(tr("gate.why")) + ' <a href="/legal/privacy">' + esc(tr("footer.privacy")) + "</a> · " +
       '<a href="#/assistenza" data-link>' + esc(tr("nav.support")) + "</a></p></section>";
   }
+  // v26: plan choice (preference only; BETA is free). Order FREE · PRO (Consigliato, centre) · BUSINESS.
+  function planPickerHtml() {
+    var plans = (state.cfg && state.cfg.plans && state.cfg.plans.length) ? state.cfg.plans : ((window.GEMINT_CONFIG && window.GEMINT_CONFIG.plans) || []);
+    var fmtPct = function (b) { var x = (b / 100).toFixed(1).replace(/\.0$/, ""); return (langIsEn() ? x : x.replace(".", ",")) + "%"; };
+    return '<fieldset class="privacy-choice plan-choice"><legend>' + esc(tr("plan.legend")) + "</legend>" +
+      plans.map(function (p) {
+        var rec = p.id === "pro";
+        return '<label class="privacy-option"' + (rec ? ' style="border:2px solid #02AC79;border-radius:12px"' : "") + '><input type="radio" name="plan" value="' + esc(p.id) + '" required><span><strong>' + esc(p.label) +
+          (rec ? ' <span class="pill" style="background:#02AC79;color:#07131C">' + esc(tr("fee.recommended")) + "</span>" : "") + "</strong><em>" +
+          esc(tr("plan.month", { price: euros(p.monthly_cents) })) + " · " + esc(tr("plan.fee", { pct: fmtPct(Number(p.fee_bps) || 0) })) + "</em></span></label>";
+      }).join("") +
+      '<p class="notice plan-beta-note">' + esc(tr("plan.betaNote")) + "</p></fieldset>";
+  }
+  function pagePlanGate() {
+    return '<section class="panel plan-gate" style="max-width:560px;margin:24px auto"><h1>' + esc(tr("plan.title")) + "</h1>" +
+      "<p>" + esc(tr("plan.lede")) + "</p>" +
+      '<form id="plan-gate-form" novalidate>' + planPickerHtml() +
+      '<p class="error" id="plan-err" hidden></p>' +
+      '<p class="row-actions"><button class="btn primary" type="submit" id="plan-save">' + esc(tr("plan.save")) + "</button>" +
+      '<button class="btn ghost" type="button" id="plan-logout">' + esc(tr("gate.logout")) + "</button></p></form>" +
+      '<p class="dim"><a href="/legal/termini">' + esc(tr("auth.terms")) + "</a> · " +
+      '<a href="#/assistenza" data-link>' + esc(tr("nav.support")) + "</a></p></section>";
+  }
+  function bindPlanGate() {
+    var f = document.getElementById("plan-gate-form");
+    if (!f) return;
+    var err = document.getElementById("plan-err"), save = document.getElementById("plan-save");
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var plan = (new FormData(f)).get("plan");
+      if (!plan) { err.hidden = false; err.textContent = tr("plan.required"); return; }
+      save.disabled = true;
+      api("me/plan", { method: "POST", body: { plan: plan } }).then(function (d) {
+        state.user = d.user || Object.assign({}, state.user, { plan: plan, needs_plan: false });
+        dmToast(tr("plan.done"));
+        render();
+      }).catch(function (e2) { save.disabled = false; err.hidden = false; err.textContent = (e2 && e2.message) || tr("plan.required"); });
+    });
+    document.getElementById("plan-logout").onclick = function () {
+      api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; go("#/"); render(); });
+    };
+  }
   function bindUsernameGate() {
     var f = document.getElementById("username-gate-form");
     if (!f) return;
@@ -1536,7 +1578,7 @@
       (signup ? '<label class="field">' + tr("auth.username") + '<input name="username" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]{3,20}" autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="' + esc(tr("auth.usernamePh")) + '"></label><p class="dim">' + esc(tr("auth.usernameHint")) + "</p>" +
         '<fieldset class="privacy-choice"><legend>' + esc(tr("auth.privacyLegend")) + "</legend><p class=\"dim\">" + esc(tr("auth.privacyHint")) + "</p>" +
         '<label class="privacy-option"><input type="radio" name="album_public" value="0" checked><span><strong>' + esc(tr("auth.privacyPrivate")) + "</strong><em>" + esc(tr("auth.privacyPrivateDesc")) + "</em></span></label>" +
-        '<label class="privacy-option"><input type="radio" name="album_public" value="1"><span><strong>' + esc(tr("auth.privacyPublic")) + "</strong><em>" + esc(tr("auth.privacyPublicDesc")) + "</em></span></label></fieldset>" : "") +
+        '<label class="privacy-option"><input type="radio" name="album_public" value="1"><span><strong>' + esc(tr("auth.privacyPublic")) + "</strong><em>" + esc(tr("auth.privacyPublicDesc")) + "</em></span></label></fieldset>" + planPickerHtml() : "") +
       '<label class="field">' + tr("auth.email") + '<input name="email" type="email" required autocomplete="' + (signup ? "email" : "username") + '"></label>' +
       '<label class="field">' + tr("auth.password") + '<input name="password" type="password" required minlength="8" autocomplete="' + (signup ? "new-password" : "current-password") + '"></label>' +
       (signup ? (function () {
@@ -3078,6 +3120,8 @@
         body.username = normalizeUsername(fd.get("username"));
         body.album_public = fd.get("album_public") === "1";
         if (!usernameValid(body.username)) { showErr(tr("user.usernameInvalid")); return; }
+        body.plan = fd.get("plan") || "";
+        if (!body.plan) { showErr(tr("plan.required")); return; }
       }
       api(mode === "signup" ? "auth/signup" : "auth/login", { body: body }).then(function (d) {
         state.user = d.user;
@@ -3098,6 +3142,13 @@
       document.title = tr("gate.title") + " — DreaMint";
       $app.innerHTML = pageUsernameGate();
       bindUsernameGate();
+      return;
+    }
+    // v26: then non-admin accounts without a plan must choose one (server decides needs_plan via role).
+    if (state.user && state.user.needs_plan && ["accedi", "registrati", "assistenza"].indexOf(p[0] || "") === -1) {
+      document.title = tr("plan.title") + " — DreaMint";
+      $app.innerHTML = pagePlanGate();
+      bindPlanGate();
       return;
     }
     try {

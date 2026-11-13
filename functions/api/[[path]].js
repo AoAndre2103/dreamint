@@ -48,7 +48,7 @@ import { normalizeUsername, normalizeQuery, likeEscape, USERNAME_RE } from "../l
 import { canSeeTest, testVisibleSql, isHiddenTest, isHiddenCard } from "../lib/visibility.js";
 import { validateChallengeVideo, videoResponse, VIDEO_MAX_BYTES, VIDEO_KV_PREFIX } from "../lib/challenge-video.js";
 import { sanitizeImageDataUrl, parseImageDataUrl, safeImageResponse, TEST_CARD_PNG_DATA_URL } from "../lib/image-safety.js";
-import { PLANS, freePlanPercent } from "../lib/plans.js";
+import { PLANS, freePlanPercent, normalizePlanId, isPlanExempt, needsPlanChoice } from "../lib/plans.js";
 
 const COOKIE = "gemint_sid";
 
@@ -210,6 +210,7 @@ async function route(request, env, path, url) {
   if ((method === "GET" || method === "HEAD") && cardChVideo) return serveChallengeVideo(request, env, cardChVideo[1]);
   if (method === "GET" && path === "me") return me(request, env);
   if (method === "PATCH" && path === "me") return updateMe(request, env);
+  if (method === "POST" && path === "me/plan") return setMyPlan(request, env);
   if (method === "GET" && path === "users/search") return searchUsers(request, env, url);
   if (method === "GET" && path === "users/username-available") return usernameAvailable(request, env, url);
   if (method === "GET" && path === "search/cert") return searchCert(request, env, url);
@@ -478,7 +479,12 @@ function publicUser(u) {
     email_verified: isEmailVerified(u),
     username: u.username || null,
     needs_username: !u.username, // v24: accounts created before v16 must pick one (frontend gate)
-    album_public: !!u.album_public
+    album_public: !!u.album_public,
+    // v26: plan preference only (BETA: no charge/commission/subscription). Admins exempt via role only.
+    plan: normalizePlanId(u.plan || "") || null,
+    plan_chosen_at: u.plan_chosen_at || null,
+    plan_exempt: isPlanExempt(u),
+    needs_plan: needsPlanChoice(u)
   };
 }
 
@@ -858,6 +864,9 @@ async function signup(request, env) {
   if (!un.ok) return json({ error: body.username == null || body.username === "" ? "Scegli uno username" : un.error, code: "username_invalid" }, 400);
   if (body.album_public != null && typeof body.album_public !== "boolean") return json({ error: "album_public non valido", code: "album_public_invalid" }, 400);
   const albumPublic = body.album_public === true ? 1 : 0;
+  // v26: a plan must be chosen at signup (preference only, nothing is charged in BETA).
+  const planId = normalizePlanId(body.plan);
+  if (!planId) return json({ error: body.plan == null || body.plan === "" ? "Scegli un piano per continuare" : "Piano non valido", code: body.plan == null || body.plan === "" ? "plan_required" : "plan_invalid" }, 400);
   const inviteRaw = body.invite_code || body.ref || "";
   let partnerId = null;
   if (String(inviteRaw).trim()) {
@@ -876,9 +885,9 @@ async function signup(request, env) {
   // Single INSERT: if the UNIQUE index loses a race nothing is created (no half account).
   try {
     await env.DB.prepare(
-      `INSERT INTO users (id, email, password_salt, password_hash, display_name, country, role, created_at, is_test, referred_by_partner_id, username, album_public)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
-    ).bind(id, email, salt, hash, display_name.slice(0, 60), country.slice(0, 60), "user", nowIso(), partnerId, un.username, albumPublic).run();
+      `INSERT INTO users (id, email, password_salt, password_hash, display_name, country, role, created_at, is_test, referred_by_partner_id, username, album_public, plan, plan_chosen_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+    ).bind(id, email, salt, hash, display_name.slice(0, 60), country.slice(0, 60), "user", nowIso(), partnerId, un.username, albumPublic, planId, nowIso()).run();
   } catch (e) {
     if (isUniqueViolation(e) && /username/i.test(String(e && e.message))) return usernameTakenResponse();
     if (isUniqueViolation(e)) return json({ error: "Questa email è già registrata" }, 409);
@@ -2848,6 +2857,19 @@ async function updateMe(request, env) {
     await env.DB.prepare("UPDATE users SET paypal_email = ? WHERE id = ?").bind(email, user.id).run();
     if (isValidPaypalEmail(email)) await autoListEligibleForUser(env, user.id);
   }
+  const fresh = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
+  return json({ user: await publicUserWithMeta(env, fresh) });
+}
+
+// v26: save the plan preference (gate for existing accounts). BETA: nothing is charged or activated.
+async function setMyPlan(request, env) {
+  const user = await requireUser(request, env);
+  if (isPlanExempt(user)) return json({ error: "Gli amministratori non devono scegliere un piano", code: "plan_exempt" }, 409);
+  const body = await readJson(request) || {};
+  const planId = normalizePlanId(body.plan);
+  if (!planId) return json({ error: body.plan == null || body.plan === "" ? "Scegli un piano per continuare" : "Piano non valido", code: body.plan == null || body.plan === "" ? "plan_required" : "plan_invalid" }, 400);
+  await env.DB.prepare("UPDATE users SET plan = ?, plan_chosen_at = ? WHERE id = ?").bind(planId, nowIso(), user.id).run();
+  await audit(env, user.id, "plan.choose", "user", user.id, { plan: planId }).catch(() => {});
   const fresh = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
   return json({ user: await publicUserWithMeta(env, fresh) });
 }
