@@ -851,21 +851,71 @@
     var count = data.cards_count != null ? data.cards_count : cards.length;
     var share = profileShareUrl(username);
     var onSale = cards.filter(function (c) { return normalizePublicCard(c).on_sale; });
-    var html = '<div class="profile-head"><div><h1 class="profile-handle">@' + esc(username) + "</h1>" +
-      "<p>" + esc(tr("album.profileLede", { name: username })) + " " + esc(cardsCountLabel(count)) + ".</p></div>" +
-      '<div class="profile-share"><label class="sr-only" for="profile-share-url">' + esc(tr("album.shareHint")) + "</label>" +
+    var adminView = !!(data.admin_view && state.user && state.user.role === "admin");
+    var handle = username ? "@" + username : (data.display_name || tr("admin.noUsername"));
+    var html = '<div class="profile-head"><div><h1 class="profile-handle">' + esc(handle) +
+      (data.private ? ' <span class="pill warn">' + esc(tr("admin.albumPrivate")) + "</span>" : "") + "</h1>" +
+      (adminView && data.private ? '<p class="dim">' + esc(tr("admin.albumPrivateNote")) + "</p>" : "") +
+      (data.cards_count == null ? "" : "<p>" + esc(tr("album.profileLede", { name: username || handle })) + " " + esc(cardsCountLabel(count)) + ".</p>") + "</div>" +
+      (username && !data.private ? '<div class="profile-share"><label class="sr-only" for="profile-share-url">' + esc(tr("album.shareHint")) + "</label>" +
       '<input id="profile-share-url" type="text" readonly value="' + esc(share) + '">' +
       '<button type="button" class="btn" id="profile-share-btn">' + esc(tr("album.share")) + "</button>" +
-      '<span class="ok" id="profile-share-ok" hidden></span></div></div>';
+      '<span class="ok" id="profile-share-ok" hidden></span></div>' : "") + "</div>";
     if (onSale.length) {
       html += '<section class="album-sale"><h2>' + esc(tr("album.forSale")) + "</h2>" +
         '<div class="sale-gallery">' + onSale.map(saleTile).join("") + "</div></section>";
     }
+    if (data.private && !adminView && !data.owner_view) {
+      // v23: private profile, cards not shared with visitors (the API returns none).
+      html += '<section class="panel private-album-cards"><h2>' + esc(tr("album.privateLabel")) + "</h2><p class=\"dim\">" + esc(tr("album.privateCardsBody")) + "</p></section>";
+      return html;
+    }
+    if (data.private && data.owner_view && !adminView) html += '<p class="dim">' + esc(tr("album.privateOwnerNote")) + "</p>";
     html += albumSectionsHtml(cards, { public: true, tab: tab || "graded" });
+    if (adminView) html += adminAlbumToolsHtml(cards);
     return html;
+  }
+  // v23: admin moderation of any album (soft removal via DELETE /api/admin/cards|listings/:id).
+  function adminAlbumToolsHtml(cards) {
+    var rows = (cards || []).map(function (c) {
+      var n = normalizePublicCard(c);
+      var title = n.card_name || c.name || cardTitle(n);
+      return '<li class="admin-album-row" data-admin-row="' + esc(c.id) + '" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid rgba(127,127,127,.2)"><span><strong>' + esc(title) + "</strong>" +
+        (c.is_test ? ' <span class="pill pill-test">TEST</span>' : "") +
+        (c.listing_id ? ' <span class="dim">' + esc(tr("admin.onSale")) + (c.price_cents != null ? " " + euros(c.price_cents) : "") + "</span>" : "") +
+        '</span><span class="row">' +
+        (c.listing_id ? '<button type="button" class="btn" data-admin-remove-listing="' + esc(c.listing_id) + '">' + esc(tr("admin.removeListing")) + "</button>" : "") +
+        '<button type="button" class="btn danger" data-admin-remove-card="' + esc(c.id) + '">' + esc(tr("admin.removeCard")) + "</button>" +
+        "</span></li>";
+    }).join("");
+    return '<section class="panel admin-album-tools"><h2>' + esc(tr("admin.albumTools")) + '</h2><p class="dim">' + esc(tr("admin.albumToolsNote")) + "</p>" +
+      '<p class="error" id="admin-album-err" hidden></p>' +
+      (rows ? '<ul class="admin-album-list" style="list-style:none;padding:0;margin:0">' + rows + "</ul>" : '<p class="empty">' + esc(tr("admin.albumEmpty")) + "</p>") + "</section>";
+  }
+  function bindAdminAlbumTools() {
+    var err = document.getElementById("admin-album-err");
+    function run(btn, path, confirmKey) {
+      if (btn.disabled || !confirm(tr(confirmKey))) return;
+      btn.disabled = true;
+      if (err) err.hidden = true;
+      api(path, { method: "DELETE" }).then(function () {
+        dmToast(tr("admin.removedOk"));
+        render();
+      }).catch(function (e) {
+        btn.disabled = false;
+        if (err) { err.hidden = false; err.textContent = String(e && e.message || tr("error.generic", { status: "" })); }
+      });
+    }
+    document.querySelectorAll("[data-admin-remove-listing]").forEach(function (b) {
+      b.addEventListener("click", function () { run(b, "admin/listings/" + encodeURIComponent(b.getAttribute("data-admin-remove-listing")), "admin.confirmRemoveListing"); });
+    });
+    document.querySelectorAll("[data-admin-remove-card]").forEach(function (b) {
+      b.addEventListener("click", function () { run(b, "admin/cards/" + encodeURIComponent(b.getAttribute("data-admin-remove-card")), "admin.confirmRemoveCard"); });
+    });
   }
   function bindPublicProfile() {
     bindAlbumTabs();
+    bindAdminAlbumTools();
     var btn = document.getElementById("profile-share-btn");
     var input = document.getElementById("profile-share-url");
     if (!btn || !input) return;
@@ -964,9 +1014,13 @@
         results.hidden = false;
         results.innerHTML = users.map(function (u) {
           var name = u.username || "";
+          var ref = u.album_ref || name;
           var n = u.cards_count != null ? u.cards_count : 0;
-          return '<a class="user-search-item" role="option" href="#/u/' + encodeURIComponent(name) + '" data-link>' +
-            '<span class="us-name">@' + esc(name) + '</span><span class="us-count">' + esc(cardsCountLabel(n)) + "</span></a>";
+          var label = name ? "@" + name : (u.display_name || tr("admin.noUsername"));
+          var extra = d.admin_view && u.display_name && name ? ' <span class="dim">· ' + esc(u.display_name) + "</span>" : "";
+          var priv = u.private ? ' <span class="pill warn">' + esc(tr("admin.albumPrivate")) + "</span>" : "";
+          return '<a class="user-search-item" role="option" href="#/u/' + encodeURIComponent(ref) + '" data-link>' +
+            '<span class="us-name">' + esc(label) + extra + priv + '</span><span class="us-count">' + esc(cardsCountLabel(n)) + "</span></a>";
         }).join("");
         results.querySelectorAll("a").forEach(function (a) {
           a.addEventListener("click", function () { setOpen(false); results.hidden = true; });
@@ -1152,22 +1206,100 @@
     if (!n) return "";
     return ' <span class="nav-badge" aria-label="' + esc(tr("nav.pending", { n: n })) + '">' + n + "</span>";
   }
-  function navHtml() {
-
+  function feesHintHtml() {
+    var link = '<a href="#/commissioni" data-link>' + esc(trx("sell.feesLink", "Vedi commissioni e piani")) + "</a>";
+    var raw = trx("sell.feesHint", "In beta le commissioni DreaMint sono a zero. {link}");
+    return '<p class="dim fees-hint">' + raw.replace("{link}", link) + "</p>";
+  }
+  function closeMobNav() {
+    var btn = document.getElementById("nav-menu-toggle");
+    var menu = document.getElementById("mob-nav");
+    var bd = document.getElementById("mob-nav-backdrop");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+    if (menu) { menu.hidden = true; menu.classList.remove("is-open"); }
+    if (bd) { bd.hidden = true; bd.classList.remove("is-open"); }
+    document.body.classList.remove("mob-nav-open");
+  }
+  function toggleMobNav() {
+    var btn = document.getElementById("nav-menu-toggle");
+    var menu = document.getElementById("mob-nav");
+    var bd = document.getElementById("mob-nav-backdrop");
+    if (!btn || !menu) return;
+    var open = btn.getAttribute("aria-expanded") === "true";
+    if (open) { closeMobNav(); return; }
+    btn.setAttribute("aria-expanded", "true");
+    menu.hidden = false;
+    menu.classList.add("is-open");
+    if (bd) { bd.hidden = false; bd.classList.add("is-open"); }
+    document.body.classList.add("mob-nav-open");
+  }
+  function navItems() {
     var u = state.user;
     var items = [
       { href: "#/", label: tr("nav.home") },
       { href: "#/gradate", label: tr("nav.graded") },
       { href: "#/non-gradate", label: tr("nav.ungraded") },
       { href: "#/album", label: tr("nav.collection") },
-      { href: "#/commissioni", label: trx("nav.fees", "Commissioni") }
+      { href: "#/commissioni", label: trx("nav.fees", "Commissioni e piani"), cls: "nav-fees" }
     ];
     if (u && window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) items.push({ href: "#/messaggi", label: tr("chat.inbox") });
     if (u && u.role === "admin") items.push({ href: "#/admin", label: tr("nav.admin"), badge: pendingReviewCount() });
+    items.push({ href: "#/assistenza", label: tr("nav.support"), cls: "nav-support" });
     items.push(u ? { href: "#/account", label: u.display_name } : { href: "#/accedi", label: tr("nav.login") });
-    return items.map(function (i) {
-      return '<a href="' + i.href + '" data-link>' + esc(i.label) + adminBadgeHtml(i.badge) + "</a>";
+    return items;
+  }
+  function navHtml() {
+    return navItems().map(function (i) {
+      return '<a href="' + i.href + '" data-link class="' + (i.cls || "") + '">' + esc(i.label) + adminBadgeHtml(i.badge) + "</a>";
     }).join("");
+  }
+  function ensureMobNav() {
+    if (!document.getElementById("mob-nav-backdrop")) {
+      var bd = document.createElement("div");
+      bd.id = "mob-nav-backdrop";
+      bd.className = "mob-nav-backdrop";
+      bd.hidden = true;
+      bd.addEventListener("click", closeMobNav);
+      document.body.appendChild(bd);
+    }
+    if (!document.getElementById("mob-nav")) {
+      var nav = document.createElement("nav");
+      nav.id = "mob-nav";
+      nav.className = "mob-nav";
+      nav.hidden = true;
+      nav.setAttribute("aria-label", trx("nav.menu", "Menu"));
+      var header = document.querySelector(".topnav");
+      if (header) header.appendChild(nav);
+      else document.body.appendChild(nav);
+    }
+    if (!document.getElementById("nav-menu-toggle")) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.id = "nav-menu-toggle";
+      btn.className = "nav-menu-toggle";
+      btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("aria-controls", "mob-nav");
+      var end = document.querySelector(".nav-end");
+      if (end) end.insertBefore(btn, end.firstChild);
+      else document.body.appendChild(btn);
+    }
+    var btn2 = document.getElementById("nav-menu-toggle");
+    if (btn2) {
+      btn2.setAttribute("aria-label", trx("nav.menu", "Menu"));
+      btn2.innerHTML = '<span class="nav-menu-bars" aria-hidden="true"><i></i><i></i><i></i></span>';
+      btn2.onclick = toggleMobNav;
+    }
+    var menu = document.getElementById("mob-nav");
+    if (menu) {
+      menu.innerHTML = navHtml();
+      menu.onclick = function (e) { if (e.target && e.target.closest && e.target.closest("a")) closeMobNav(); };
+    }
+    if (!document.documentElement.dataset.mobNavEsc) {
+      document.documentElement.dataset.mobNavEsc = "1";
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") closeMobNav();
+      });
+    }
   }
   function renderChrome() {
     if (window.DreaMintTradeV9) {
@@ -1175,6 +1307,8 @@
       window.DreaMintTradeV9.setUser(state.user);
     }
     document.getElementById("desk-nav").innerHTML = navHtml();
+    ensureMobNav();
+    closeMobNav();
     var tabIco = {
       home: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 11.2 12 5l8 6.2V20a1 1 0 0 1-1 1h-5.2v-6.2H10.2V21H5a1 1 0 0 1-1-1v-8.8Z"/></svg>',
       graded: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3.4 20.4 10 12 21 3.6 10 12 3.4Z"/></svg>',
@@ -1192,12 +1326,14 @@
     ];
     if (state.user && state.user.role === "admin") tabs.push(["#/admin", "admin", tr("nav.admin")]);
     tabs.push([state.user ? "#/account" : "#/accedi", state.user ? "profile" : "login", state.user ? tr("nav.profile") : tr("nav.login")]);
-    document.getElementById("tabbar").innerHTML = tabs.map(function (i) {
+    var tabbar = document.getElementById("tabbar");
+    tabbar.innerHTML = tabs.map(function (i) {
       var extra = i[1] === "admin" ? adminBadgeHtml() : "";
       return '<a href="' + i[0] + '" data-link>' + (tabIco[i[1]] || "") + "<span>" + i[2] + extra + "</span></a>";
     }).join("");
+    tabbar.style.gridTemplateColumns = "repeat(" + tabs.length + ", minmax(0, 1fr))";
     var r = route();
-    document.querySelectorAll(".desk-nav a, .tabbar a").forEach(function (a) {
+    document.querySelectorAll(".desk-nav a, .tabbar a, .mob-nav a").forEach(function (a) {
       var href = a.getAttribute("href").replace(/^#/, "");
       if (href === "#/") href = "/";
       var on = href === r.path || (href !== "/" && r.path.startsWith(href));
@@ -1368,7 +1504,10 @@
       '<p class="dim">' + tr("account.paypalHint") + "</p>" +
       '<p class="error" id="paypal-err" hidden></p><p class="ok" id="paypal-ok" hidden></p>' +
       '<button class="btn primary" type="submit">' + tr("account.paypalSave") + "</button></form>" +
-      (state.user.role === "admin" ? '<p style="margin:12px 0"><a class="btn" href="#/admin" data-link>' + tr("account.admin") + adminBadgeHtml() + "</a></p>" : "") +
+      '<div class="account-fees">' + feesHintHtml() +
+      '<p class="row-actions"><a class="btn secondary" href="#/commissioni" data-link>' + esc(trx("nav.fees", "Commissioni e piani")) + "</a></p></div>" +
+      (state.user.role === "admin" ? '<p style="margin:12px 0"><a class="btn" href="#/admin" data-link>' + tr("account.admin") + adminBadgeHtml() + "</a></p>" +
+        '<p style="margin:12px 0"><a class="btn primary" href="#/admin/lancio" data-link>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</a></p>" : "") +
       '<p style="margin-top:16px"><button class="btn" id="logout">' + tr("account.logout") + "</button></p></section>";
   }
 
@@ -1417,6 +1556,7 @@
     }
     html += '<label class="field sale-price-field">' + tr("reg.price") + '<input id="sale-price" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="' + esc(tr("reg.pricePh")) + '"></label>' +
       '<p class="dim">' + tr("reg.priceHint") + "</p>" +
+      feesHintHtml() +
       "</section><section class=\"panel\"><h2>" + tr("reg.photos") + "</h2>";
     html += '<div class="photo-guide"><h3>' + tr("reg.how") + "</h3><ul>" +
       "<li>" + tr("reg.how1") + "</li>" +
@@ -1566,6 +1706,7 @@
     if (c.can_edit_price && !v9Sell) {
       var current = (c.listing_price_cents || c.asking_price_cents || 0) / 100;
       html += '<form id="price-form" style="margin-top:16px"><label class="field">' + tr("reg.price") + '<input name="price" type="number" min="0.01" step="0.01" inputmode="decimal" required value="' + (current ? current.toFixed(2) : "") + '"></label>' +
+        feesHintHtml() +
         '<p class="error" id="price-err" hidden></p><p class="ok" id="price-ok" hidden></p>' +
         '<button class="btn" type="submit">' + tr("card.updatePrice") + "</button></form>";
     }
@@ -1578,6 +1719,7 @@
       } else {
         var prefill = c.asking_price_cents ? (Number(c.asking_price_cents) / 100).toFixed(2) : "";
         html += '<form id="list-form" style="margin-top:16px"><label class="field">' + tr("reg.price") + '<input name="price" type="number" min="0.01" step="0.01" inputmode="decimal" required value="' + prefill + '"></label>' +
+          feesHintHtml() +
           '<button class="btn primary" type="submit">' + tr("card.publish") + "</button></form>";
       }
     } else if (window.DreaMintTradeV9 && window.DreaMintTradeV9.on() && window.DreaMintTradeV9.listFormHtml(c)) {
@@ -2096,7 +2238,10 @@
   }
 
   function pageAdmin(items) {
-    return '<p class="row-actions"><a class="btn ghost" href="#/admin/vendite" data-link>Vendite e spedizioni</a><a class="btn ghost" href="#/admin/partner" data-link>Partner</a><a class="btn ghost" href="#/admin/lancio" data-link>' + esc(trx("al.link", "Stato del lancio")) + "</a>" +
+    return '<section class="panel al-jump"><h2>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</h2>" +
+      "<p>" + esc(trx("al.manageP", "Apri il pannello per cambiare lo stato di lancio. Ogni passaggio richiede una conferma esplicita e resta registrato.")) + "</p>" +
+      '<p class="row-actions"><a class="btn primary" href="#/admin/lancio" data-link>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</a></p></section>" +
+      '<p class="row-actions"><a class="btn ghost" href="#/admin/assistenza" data-link>' + esc(tr("support.adminTitle")) + '</a><a class="btn ghost" href="#/admin/vendite" data-link>Vendite e spedizioni</a><a class="btn ghost" href="#/admin/partner" data-link>Partner</a><a class="btn ghost" href="#/admin/lancio" data-link>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</a>" +
       (window.DreaMintCert ? window.DreaMintCert.adminNavLink() : '<a class="btn ghost" href="#/admin/riscatti" data-link>Riscatti</a>') +
       "</p>" +
       '<section class="panel"><h2>Crea una carta TEST (solo admin)</h2>' +
@@ -2104,6 +2249,10 @@
       '<form id="test-card-form" class="grid-2"><label class="field">Email dell’utente<input name="email" type="email" required placeholder="es. il tuo account personale"></label>' +
       '<div style="align-self:end"><button class="btn primary" type="submit">Crea carta TEST</button></div></form>' +
       '<p class="error" id="test-err" hidden></p><p class="ok" id="test-ok" hidden></p></section>' +
+      '<section class="panel"><h2>' + esc(tr("admin.removeAnyTitle")) + '</h2><p class="muted">' + esc(tr("admin.removeAnyNote")) + "</p>" +
+      '<form id="admin-remove-form" class="grid-2"><label class="field">' + esc(tr("admin.removeAnyField")) + '<input name="card" required placeholder="https://dreamint.it/#/carta/…"></label>' +
+      '<div style="align-self:end"><button class="btn danger" type="submit">' + esc(tr("admin.removeCard")) + "</button></div></form>" +
+      '<p class="error" id="admin-remove-err" hidden></p><p class="ok" id="admin-remove-ok" hidden></p></section>' +
       "<h2>Coda di verifica" + (items.length ? " (" + items.length + ")" : "") + "</h2>" + (items.length ? '<div class="list">' + items.map(function (it) {
       return '<a class="list-item" href="#/admin/carta/' + it.id + '" data-link><img src="/api/cards/' + it.id + '/photo/front" alt="">' +
         "<div><b>" + esc(it.card_name) + "</b>" + (it.missing_back ? ' <span class="pill warn">Retro mancante</span>' : "") + "<div class=\"dim\">" + esc(it.code_printed) + " · " + esc(it.language) + " · " + (it.is_ungraded ? "Non gradata" + (it.card_condition ? " · " + it.card_condition : "") : esc(it.grader + " " + (it.certificate_no || ""))) + (it.asking_price_cents ? " · " + euros(it.asking_price_cents) : "") + "</div>" +
@@ -2192,7 +2341,97 @@
       (c.cardmarket_avg_cents ? '<p class="ref-price">' + esc(cardmarketLabel(c.cardmarket_avg_cents, true)) + "</p>" : "") +
       '<div class="row"><button class="btn primary" id="approve">' + (c.is_ungraded ? "Pubblica l’annuncio" : "Approva e assegna rarità") + "</button></div>" +
       '<label class="field">Motivo del rifiuto (obbligatorio per rifiutare)<input id="rej-reason"></label>' +
-      '<button class="btn danger" id="reject">Rifiuta</button><p class="error" id="form-err" hidden></p></section>';
+      '<button class="btn danger" id="reject">Rifiuta</button><p class="error" id="form-err" hidden></p></section>' +
+      '<section class="panel"><h3>' + esc(tr("admin.removeAnyTitle")) + '</h3><p class="muted">' + esc(tr("admin.albumToolsNote")) + "</p>" +
+      '<button class="btn danger" id="admin-remove-card" type="button">' + esc(tr("admin.removeCard")) + '</button><p class="error" id="admin-remove-err" hidden></p></section>';
+  }
+  // v23: shared admin soft removal (explicit confirm, DELETE /api/admin/cards/:id)
+  function adminRemoveCardFlow(id, errEl, done) {
+    if (!id || !confirm(tr("admin.confirmRemoveCard"))) return Promise.resolve(false);
+    if (errEl) errEl.hidden = true;
+    return api("admin/cards/" + encodeURIComponent(id), { method: "DELETE" }).then(function (d) {
+      dmToast(tr("admin.removedOk"));
+      if (done) done(d);
+      return true;
+    }).catch(function (e) {
+      if (errEl) { errEl.hidden = false; errEl.textContent = String(e && e.message || ""); } else alert(e && e.message);
+      return false;
+    });
+  }
+  function cardIdFromInput(v) {
+    v = String(v || "").trim();
+    var m = v.match(/(?:carta|cards|c|carta\/admin|admin\/carta)\/([A-Za-z0-9-]{8,64})/) || v.match(/^([A-Za-z0-9-]{8,64})$/);
+    return m ? m[1] : "";
+  }
+  // v23 Assistenza
+  function supportCatOptions(sel) {
+    return ["technical", "user_report", "payment", "other"].map(function (k) {
+      return '<option value="' + k + '"' + (sel === k ? " selected" : "") + ">" + esc(tr("support.cat." + k)) + "</option>";
+    }).join("");
+  }
+  function pageSupport() {
+    if (!state.user) {
+      return '<section class="panel support-page"><h1>' + esc(tr("support.title")) + "</h1><p>" + esc(tr("support.loginNeeded")) + "</p>" +
+        '<p class="row-actions"><a class="btn primary" href="#/accedi" data-link>' + esc(tr("nav.login")) + '</a><a class="btn ghost" href="#/registrati" data-link>' + esc(tr("support.signup")) + "</a></p>" +
+        '<p class="dim">' + esc(tr("support.mailAlt")) + ' <a href="mailto:info@dreamint.it">info@dreamint.it</a></p></section>';
+    }
+    return '<section class="panel support-page"><h1>' + esc(tr("support.title")) + "</h1><p>" + esc(tr("support.lede")) + "</p>" +
+      '<form id="support-form" novalidate>' +
+      '<label class="field">' + esc(tr("support.subject")) + '<input name="subject" required minlength="3" maxlength="120"></label>' +
+      '<label class="field">' + esc(tr("support.category")) + '<select name="category" required><option value="">' + esc(tr("support.catPick")) + "</option>" + supportCatOptions("") + "</select></label>" +
+      '<label class="field">' + esc(tr("support.message")) + '<textarea name="message" rows="7" required minlength="10" maxlength="4000"></textarea><span class="dim" id="support-count">0 / 4000</span></label>' +
+      '<label class="field">' + esc(tr("support.link")) + '<input name="link" type="url" maxlength="500" placeholder="https://"></label>' +
+      '<p class="error" id="support-err" hidden></p><p class="ok" id="support-ok" hidden></p>' +
+      '<button class="btn primary" type="submit" id="support-submit">' + esc(tr("support.send")) + "</button></form></section>";
+  }
+  function bindSupport() {
+    var f = document.getElementById("support-form");
+    if (!f) return;
+    var msg = f.querySelector("textarea[name=message]"), cnt = document.getElementById("support-count");
+    if (msg && cnt) msg.addEventListener("input", function () { cnt.textContent = msg.value.length + " / 4000"; });
+    var busy = false;
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (busy) return;
+      var fd = new FormData(f), er = document.getElementById("support-err"), ok = document.getElementById("support-ok"), btn = document.getElementById("support-submit");
+      var body = { subject: String(fd.get("subject") || "").trim(), category: String(fd.get("category") || ""), message: String(fd.get("message") || "").trim(), link: String(fd.get("link") || "").trim() || undefined };
+      er.hidden = true; ok.hidden = true;
+      var bad = body.subject.length < 3 || body.subject.length > 120 ? tr("support.errSubject")
+        : !body.category ? tr("support.errCategory")
+        : body.message.length < 10 || body.message.length > 4000 ? tr("support.errMessage")
+        : body.link && !/^https?:\/\//i.test(body.link) ? tr("support.errLink") : "";
+      if (bad) { er.hidden = false; er.textContent = bad; return; }
+      busy = true; btn.disabled = true; btn.textContent = tr("reg.submitting");
+      api("support", { body: body }).then(function () {
+        f.reset(); if (cnt) cnt.textContent = "0 / 4000";
+        ok.hidden = false; ok.textContent = tr("support.sent");
+      }).catch(function (err) {
+        er.hidden = false;
+        er.textContent = err.status === 429 ? tr("support.rate") : String(err.message || "");
+      }).then(function () { busy = false; btn.disabled = false; btn.textContent = tr("support.send"); });
+    });
+  }
+  function pageAdminSupport(d) {
+    var st = d.status || "open";
+    var tabs = ["open", "closed", "all"].map(function (k) {
+      return '<a class="btn ' + (k === st ? "primary" : "ghost") + '" href="#/admin/assistenza/' + k + '" data-link>' + esc(tr("support.st." + k)) +
+        (k !== "all" && d.counts ? " (" + (d.counts[k] || 0) + ")" : "") + "</a>";
+    }).join("");
+    var list = (d.requests || []).map(function (r) {
+      var who = (r.username ? "@" + r.username + " · " : "") + (r.display_name || "");
+      return '<article class="panel support-item"><p><span class="pill ' + (r.status === "open" ? "warn" : "") + '">' + esc(tr("support.st." + r.status)) + "</span> " +
+        '<span class="pill">' + esc(r.category_label || r.category) + "</span> <span class=\"dim\">" + esc(new Date(r.created_at).toLocaleString()) + "</span></p>" +
+        "<h3>" + esc(r.subject) + "</h3>" +
+        '<p class="dim">' + esc(who) + (r.email ? ' · <a href="mailto:' + esc(r.email) + "?subject=" + encodeURIComponent("Re: " + r.subject) + '">' + esc(r.email) + "</a>" : "") + "</p>" +
+        '<p style="white-space:pre-wrap">' + esc(r.message) + "</p>" +
+        (r.link ? '<p><a href="' + esc(r.link) + '" target="_blank" rel="noopener noreferrer nofollow">' + esc(r.link) + "</a></p>" : "") +
+        (r.status === "closed" && r.closed_at ? '<p class="dim">' + esc(tr("support.closedBy", { name: r.closed_by_name || "admin", date: new Date(r.closed_at).toLocaleString() })) + "</p>" : "") +
+        '<p class="row-actions"><button type="button" class="btn ' + (r.status === "open" ? "primary" : "ghost") + '" data-support-id="' + esc(r.id) + '" data-support-to="' + (r.status === "open" ? "closed" : "open") + '">' +
+        esc(tr(r.status === "open" ? "support.close" : "support.reopen")) + "</button></p></article>";
+    }).join("");
+    return '<section class="panel"><h1>' + esc(tr("support.adminTitle")) + '</h1><p class="row-actions">' + tabs + "</p></section>" +
+      '<p class="error" id="support-admin-err" hidden></p>' +
+      (list || '<section class="panel"><p class="muted">' + esc(tr("support.none")) + "</p></section>");
   }
 
   var photos = { front: null, back: null, challenge: null, cert: null };
@@ -2588,20 +2827,39 @@
     photos = { front: null, back: null, challenge: null, cert: null };
     photoWork = { front: null, back: null, challenge: null, cert: null };
     bindPhotoSlots();
+    var submitInFlight = false;
+    function setSubmitting(on) {
+      submitInFlight = on;
+      var b = document.getElementById("submit-card");
+      if (!b) return;
+      if (on) {
+        if (!b.getAttribute("data-label")) b.setAttribute("data-label", b.textContent);
+        b.disabled = true;
+        b.setAttribute("aria-busy", "true");
+        b.textContent = tr("reg.submitting");
+      } else {
+        b.disabled = false;
+        b.removeAttribute("aria-busy");
+        if (b.getAttribute("data-label")) b.textContent = b.getAttribute("data-label");
+      }
+    }
     document.getElementById("submit-card").addEventListener("click", function () {
+      if (submitInFlight) return; // v23: no double submit (double click / tap while uploading)
+      setSubmitting(true);
       var raw = document.getElementById("kind-fixed").value === "raw";
       var pending = Object.keys(photoWork).filter(function (k) { return photoWork[k]; }).map(exportWork);
+      function stop(msg) { setSubmitting(false); showErr(msg); }
       Promise.all(pending).then(function () {
-      if (raw && !photos.front && !photos.back) { showErr(tr("reg.photosRequiredRaw")); return; }
-      if (!photos.front) { showErr(tr("photo.needFront")); return; }
-      if (raw && !photos.back) { showErr(tr("photo.needBack")); return; }
-      if (!raw && !challengeVideoOk) { showErr(tr("reg.challengeVideoNeed")); return; }
+      if (raw && !photos.front && !photos.back) { stop(tr("reg.photosRequiredRaw")); return; }
+      if (!photos.front) { stop(tr("photo.needFront")); return; }
+      if (raw && !photos.back) { stop(tr("photo.needBack")); return; }
+      if (!raw && !challengeVideoOk) { stop(tr("reg.challengeVideoNeed")); return; }
       var warns = Object.keys(photoWork).reduce(function (acc, k) {
         return acc.concat((photoWork[k] && photoWork[k].warnings) || []);
       }, []);
       var btn = document.getElementById("submit-card");
       if (warns.length && btn.getAttribute("data-confirm-warn") !== "1") {
-        showErr(tr("photo.blurWarn"));
+        stop(tr("photo.blurWarn"));
         btn.setAttribute("data-confirm-warn", "1");
         return;
       }
@@ -2624,11 +2882,15 @@
         cardmarket_avg_euros: (document.getElementById("cardmarket-avg") || {}).value || undefined,
         photos: photos
       };
-      if (body.price_euros && !(Number(body.price_euros) > 0)) { showErr(tr("err.priceInvalid")); return; }
+      if (body.price_euros && !(Number(body.price_euros) > 0)) { stop(tr("err.priceInvalid")); return; }
       if (!body.price_euros) body.price_euros = undefined;
-      api("cards", { body: body }).then(function (d) { go("#/carta/" + d.card.id); })
-        .catch(function (err) { showErr(videoErrorMessage(err)); });
-      }).catch(function (err) { showErr(err.message); });
+      // The server answers 200 { card, dedup: true } when the same request was already received:
+      // same result as 201, the user lands on the one existing request.
+      return api("cards", { body: body }).then(function (d) {
+        if (d && d.dedup) dmToast(tr("reg.alreadySent"));
+        go("#/carta/" + d.card.id);
+      }).catch(function (err) { stop(videoErrorMessage(err)); });
+      }).catch(function (err) { stop(err.message); });
     });
   }
 
@@ -3057,6 +3319,27 @@
         }
         return;
       }
+      if (p[0] === "assistenza") {
+        document.title = tr("support.title") + " — DreaMint";
+        $app.innerHTML = pageSupport();
+        bindSupport();
+        return;
+      }
+      if (p[0] === "admin" && p[1] === "assistenza") {
+        if (!state.user || state.user.role !== "admin") { $app.innerHTML = pageAuth("login"); bindAuth("login"); return; }
+        var supSt = ["open", "closed", "all"].indexOf(p[2]) >= 0 ? p[2] : "open";
+        var sup = await api("admin/support?status=" + supSt);
+        $app.innerHTML = pageAdminSupport(sup);
+        $app.querySelectorAll("[data-support-id]").forEach(function (b) {
+          b.onclick = function () {
+            b.disabled = true;
+            api("admin/support/" + encodeURIComponent(b.getAttribute("data-support-id")), { method: "PATCH", body: { status: b.getAttribute("data-support-to") } })
+              .then(function () { render(); })
+              .catch(function (e) { b.disabled = false; var er = document.getElementById("support-admin-err"); er.hidden = false; er.textContent = e.message; });
+          };
+        });
+        return;
+      }
       if (p[0] === "admin" && p[1] === "partner") {
         if (!state.user || state.user.role !== "admin") { $app.innerHTML = pageAuth("login"); bindAuth("login"); return; }
         var admP = await api("admin/partners");
@@ -3097,6 +3380,12 @@
           api("admin/cards/" + p[2] + "/reject", { body: { reason: document.getElementById("rej-reason").value } })
             .then(function () { go("#/admin"); }).catch(function (err) { showErr(err.message); });
         };
+        var arm = document.getElementById("admin-remove-card");
+        if (arm) arm.onclick = function () {
+          arm.disabled = true;
+          adminRemoveCardFlow(p[2], document.getElementById("admin-remove-err"), function () { go("#/admin"); })
+            .then(function (okk) { if (!okk) arm.disabled = false; });
+        };
         return;
       }
       if (p[0] === "admin") {
@@ -3104,6 +3393,15 @@
         if (state.user) state.user.pending_reviews = (q.items || []).length;
         renderChrome();
         $app.innerHTML = pageAdmin(q.items || []);
+        var arf = document.getElementById("admin-remove-form");
+        if (arf) arf.onsubmit = function (e) {
+          e.preventDefault();
+          var er = document.getElementById("admin-remove-err"), okEl = document.getElementById("admin-remove-ok");
+          var cid = cardIdFromInput(new FormData(arf).get("card"));
+          okEl.hidden = true;
+          if (!cid) { er.hidden = false; er.textContent = tr("admin.removeAnyBad"); return; }
+          adminRemoveCardFlow(cid, er, function () { okEl.hidden = false; okEl.textContent = tr("admin.removedOk"); arf.reset(); });
+        };
         var tf = document.getElementById("test-card-form");
         if (tf) tf.onsubmit = function (e) {
           e.preventDefault();

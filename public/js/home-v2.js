@@ -359,7 +359,74 @@
       '<p class="h2-actions"><a class="btn primary" href="' + (H.state.user ? "#/collezione" : "#/registrati") + '" data-link>' + esc(tr("cs.cta")) + "</a></p></section>";
   }
 
-  /* ---------- Launch teaser ---------- */
+  /* ---------- Plans (visible on home, not buried at the bottom) ---------- */
+  function launchStateOf(cfg) {
+    var L = (cfg && cfg.launch) || {};
+    return L.effective_state || L.state || "BETA";
+  }
+  function isMonetized(cfg) {
+    return launchStateOf(cfg) === "MONETIZATION_ENABLED";
+  }
+  function planActionHtml(cfg) {
+    if (isMonetized(cfg)) {
+      return '<button type="button" class="btn primary fp-act" data-plan-activate>' + esc(tr("fee.activate")) + "</button>";
+    }
+    return '<button type="button" class="btn fp-act" data-plan-locked disabled>' + esc(tr("fee.activateLater")) + "</button>";
+  }
+  function adminFeesBtn() {
+    var u = H.state && H.state.user;
+    if (!u || u.role !== "admin") return "";
+    return '<p class="fee-admin"><a class="btn ghost fee-admin-btn" href="#/admin/lancio" data-link>' + esc(tr("al.manage")) + "</a></p>";
+  }
+  function planCardsHtml(cfg) {
+    var plans = plansOf(cfg);
+    var pdesc = { free: "fee.free.p", pro: "fee.pro.p", business: "fee.biz.p" };
+    return '<div class="fp-grid">' + plans.map(function (p) {
+      var isPro = p.id === "pro";
+      var rec = isPro ? '<p class="fp-rec">' + esc(tr("fee.recommended")) + "</p>" : "";
+      return '<article class="fp-card fp-' + esc(p.id) + (isPro ? " is-recommended" : "") + '">' + rec +
+        '<p class="fp-name">' + esc(p.label) + "</p>" +
+        '<p class="fp-price"><strong>' + esc(money(p.monthly_cents)) + "</strong><span>" + esc(tr("fee.month")) + "</span></p>" +
+        '<p class="fp-rate"><strong>' + esc(pctText(p.fee_bps)) + "</strong> " + esc(tr("fee.onSale")) + "</p>" +
+        '<p class="fp-desc">' + esc(tr(pdesc[p.id] || "")) + "</p>" +
+        (isMonetized(cfg) ? "" : '<span class="soon-chip">' + esc(tr("fee.futureBadge")) + "</span>") +
+        planActionHtml(cfg) + "</article>";
+    }).join("") + "</div>" +
+      '<p class="notice" id="plan-activate-notice" hidden role="status"></p>';
+  }
+  function bindPlanActions(scope) {
+    if (!scope) return;
+    var notice = scope.querySelector("#plan-activate-notice");
+    scope.querySelectorAll("[data-plan-activate]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!notice) {
+          notice = scope.querySelector("#plan-activate-notice");
+        }
+        if (!notice) {
+          notice = document.createElement("p");
+          notice.id = "plan-activate-notice";
+          notice.className = "notice";
+          notice.setAttribute("role", "status");
+          var sec = btn.closest("section") || scope;
+          sec.appendChild(notice);
+        }
+        notice.hidden = false;
+        notice.textContent = tr("fee.activateNotice");
+        try { notice.scrollIntoView({ block: "nearest" }); } catch (e) {}
+      });
+    });
+  }
+  function homePlans(cfg) {
+    cfg = cfg || (H.state && H.state.cfg) || {};
+    return '<section class="h2-sec h2-plans" id="piani" aria-labelledby="hp-t">' +
+      kicker("home.plans.kicker") +
+      '<h2 id="hp-t" class="h2-h">' + esc(tr("home.plans.title")) + "</h2>" +
+      '<p class="h2-p">' + esc(tr("home.plans.p")) + "</p>" +
+      '<p class="fee-banner home-plans-badge">' + esc(tr("home.plans.badge")) + "</p>" +
+      planCardsHtml(cfg) +
+      '<p class="h2-actions"><a class="btn primary" href="#/commissioni" data-link>' + esc(tr("home.plans.cta")) + "</a></p>" +
+      "</section>";
+  }
   function launchTeaser() {
     return '<section class="h2-sec h2-launch" aria-labelledby="ls-t"><div class="ls-card">' + kicker("ls.kicker") +
       '<h2 id="ls-t" class="h2-h">' + esc(tr("ls.title")) + "</h2><p>" + esc(tr("ls.p")) + "</p>" +
@@ -369,8 +436,9 @@
 
   function homeHtml(data) {
     data = data || {};
-    return '<div class="home-v2">' + hero() + ticker(data.market, data.recent) + universes() + rarity() + scanner() +
-      marketPreview(data.market, data.recent) + chartSection(data.market) + collections() + launchTeaser() + "</div>";
+    var cfg = (H.state && H.state.cfg) || {};
+    return '<div class="home-v2">' + hero() + ticker(data.market, data.recent) + universes() + homePlans(cfg) + rarity() + scanner() +
+      marketPreview(data.market, data.recent) + chartSection(data.market) + collections() + "</div>";
   }
 
   /* ---------- Bindings ---------- */
@@ -380,6 +448,7 @@
   }
   function bindHome(scope) {
     try { scope.querySelectorAll('.hero-card .slab-label, .hero-card .slab-tier-chip').forEach(function (n) { n.setAttribute('aria-hidden', 'true'); }); } catch (e) {}
+    bindPlanActions(scope);
     var rm = reduceMotion();
     if (lowPower()) document.documentElement.classList.add("lowfx");
     var stage = scope.querySelector("[data-h2-stage]");
@@ -515,14 +584,7 @@
     var L = (cfg && cfg.launch) || { effective_state: "BETA" };
     var st = L.effective_state || "BETA";
     var endDate = L.promo_end ? new Date(L.promo_end).toLocaleDateString(H.langIsEn() ? "en-GB" : "it-IT", { day: "numeric", month: "long", year: "numeric" }) : "";
-    var pdesc = { free: "fee.free.p", pro: "fee.pro.p", business: "fee.biz.p" };
-    var cards = plans.map(function (p) {
-      return '<article class="fp-card fp-' + esc(p.id) + '"><p class="fp-name">' + esc(p.label) + "</p>" +
-        '<p class="fp-price"><strong>' + esc(money(p.monthly_cents)) + "</strong><span>" + esc(tr("fee.month")) + "</span></p>" +
-        '<p class="fp-rate"><strong>' + esc(pctText(p.fee_bps)) + "</strong> " + esc(tr("fee.onSale")) + "</p>" +
-        '<p class="fp-desc">' + esc(tr(pdesc[p.id] || "")) + "</p>" +
-        '<span class="soon-chip">' + esc(tr("fee.futureBadge")) + "</span></article>";
-    }).join("");
+    var cards = planCardsHtml(cfg);
     var rules = [1, 2, 3, 4, 5, 6].map(function (n) { return "<li>" + esc(tr("fee.rule" + n)) + "</li>"; }).join("");
     var cmpRows = [
       [tr("fee.cmp.monthly"), plans.map(function (p) { return money(p.monthly_cents) + tr("fee.month"); })],
@@ -541,15 +603,15 @@
       '<p class="h2-p">' + esc(tr("fee.lede")) + "</p>" +
       '<p class="fee-state"><span class="live-badge"><i aria-hidden="true"></i>' + esc(tr("fee.state.h")) + "</span> " + esc(stateText) + "</p>" +
       '<p class="fee-banner">' + esc(tr("lb.beta")) + "</p></section>" +
-      '<section class="h2-sec"><p class="fee-future"><span class="soon-chip">' + esc(tr("fee.futureBadge")) + "</span></p>" +
-      '<div class="fp-grid">' + cards + "</div></section>" +
+      '<section class="h2-sec">' + adminFeesBtn() + '<p class="fee-future"><span class="soon-chip">' + esc(tr("fee.futureBadge")) + "</span></p>" +
+      cards + "</section>" +
       '<section class="h2-sec fee-cols"><div class="fee-rules"><h2 class="h2-h3">' + esc(tr("fee.rules.h")) + "</h2><ul>" + rules + "</ul>" +
       '<p class="fee-example">' + esc(tr("fee.example")) + "</p>" +
       '<p><a href="/legal/regolamento-lancio">' + esc(tr("fee.rules.link")) + "</a> · <a href=\"/legal/termini\">" + esc(tr("footer.terms")) + "</a></p></div>" +
       '<div class="fee-calc"><h2 class="h2-h3">' + esc(tr("fee.calc.h")) + "</h2><p class=\"muted\">" + esc(tr("fee.calc.p")) + "</p>" +
-      '<label class="field" for="fee-amount">' + esc(tr("fee.calc.amount")) + '<input id="fee-amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" lang="' + (H.langIsEn() ? "en" : "it") + '" value="500" aria-describedby="fee-amount-hint"></label>' +
+      '<label class="field" for="fee-amount">' + esc(tr("fee.calc.amount")) + '<input id="fee-amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" lang="' + (H.langIsEn() ? "en" : "it") + '" value="2500" aria-describedby="fee-amount-hint"></label>' +
       '<p class="muted fee-hint" id="fee-amount-hint">' + esc(tr("fee.calc.hint")) + "</p>" +
-      '<input id="fee-range" type="range" min="0" max="5000" step="10" value="500" aria-label="' + esc(tr("fee.calc.amount")) + '">' +
+      '<input id="fee-range" type="range" min="0" max="5000" step="10" value="2500" aria-label="' + esc(tr("fee.calc.amount")) + '">' +
       '<div class="fee-out" id="fee-out" aria-live="polite" role="region" tabindex="0" aria-label="' + esc(tr("fee.calc.h")) + '"></div>' +
       '<p class="fee-beta-now">' + esc(tr("fee.calc.beta")) + "</p></div></section>" +
       '<section class="h2-sec"><h2 class="h2-h3">' + esc(tr("fee.cmp.h")) + "</h2>" + table + "</section></div>";
@@ -576,10 +638,16 @@
       var winners = rows.filter(function (r) { return r.total === minTotal; });
       var best = winners.length === 1 ? winners[0] : null;
       var tie = winners.length > 1 && cents > 0;
-      var html = '<table class="fee-res"><thead><tr><th scope="col">' + esc(tr("fee.calc.plan")) + '</th><th scope="col">' + esc(tr("fee.calc.fee")) + '</th><th scope="col">' + esc(tr("fee.calc.sub")) + '</th><th scope="col">' + esc(tr("fee.calc.total")) + '</th><th scope="col">' + esc(tr("fee.calc.net")) + "</th></tr></thead><tbody>" +
+      var labFee = esc(tr("fee.calc.fee")), labSub = esc(tr("fee.calc.sub")), labTot = esc(tr("fee.calc.total")), labNet = esc(tr("fee.calc.net"));
+      var html = '<table class="fee-res"><thead><tr><th scope="col">' + esc(tr("fee.calc.plan")) + '</th><th scope="col">' + labFee + '</th><th scope="col">' + labSub + '</th><th scope="col">' + labTot + '</th><th scope="col">' + labNet + "</th></tr></thead><tbody>" +
         rows.map(function (r) {
           var isTie = tie && winners.indexOf(r) > -1;
-          return "<tr" + (r === best || isTie ? ' class="best"' : "") + '><th scope="row">' + esc(r.p.label) + (r === best ? ' <span class="best-chip">' + esc(tr("fee.calc.best")) + "</span>" : (isTie ? ' <span class="best-chip">' + esc(tr("fee.calc.tie")) + "</span>" : "")) + "</th><td>" + esc(money(r.fee)) + "</td><td>" + esc(money(r.p.monthly_cents)) + "</td><td><b>" + esc(money(r.total)) + "</b></td><td>" + esc(money(r.net)) + "</td></tr>";
+          var chip = r === best ? ' <span class="best-chip">' + esc(tr("fee.calc.best")) + "</span>" : (isTie ? ' <span class="best-chip">' + esc(tr("fee.calc.tie")) + "</span>" : "");
+          return "<tr" + (r === best || isTie ? ' class="best"' : "") + '><th scope="row">' + esc(r.p.label) + chip + "</th>" +
+            '<td data-label="' + labFee + '">' + esc(money(r.fee)) + "</td>" +
+            '<td data-label="' + labSub + '">' + esc(money(r.p.monthly_cents)) + "</td>" +
+            '<td data-label="' + labTot + '"><b>' + esc(money(r.total)) + "</b></td>" +
+            '<td data-label="' + labNet + '">' + esc(money(r.net)) + "</td></tr>";
         }).join("") + "</tbody></table>";
       var be1 = plans[1] ? breakEven(plans[0], plans[1]) : null;
       var be2 = plans[2] ? breakEven(plans[1], plans[2]) : null;
@@ -597,6 +665,7 @@
     });
     if (rng) rng.addEventListener("input", function () { amt.value = fmtInput(Number(rng.value)); calc(); });
     calc();
+    bindPlanActions(scope);
   }
 
   /* ---------- Admin: launch state ---------- */

@@ -4,7 +4,7 @@
  */
 
 import { serialTotalFor } from "./mint-draw.js";
-import { canSeeTest, isHiddenTest, loadViewer } from "./visibility.js";
+import { canSeeTest, isHiddenCard as isHiddenTest, loadViewer } from "./visibility.js";
 import { parseImageDataUrl, sanitizeImageDataUrl, sniffImageType, safeImageResponse } from "./image-safety.js";
 
 const TIER_LABELS = {

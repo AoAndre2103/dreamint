@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # DreaMint deploy (DO NOT RUN without Andrea's explicit OK).
+# v23 (2026-11-13): fees/plans frontend (fees1) + admin sees/searches private albums, admin soft removal
+#   of listings/cards, POST /api/cards double-submit dedup (migrate-v22: slabs.submit_fingerprint),
+#   admin notifications to every admin, private profiles visible without cards, Assistenza
+#   (migrate-v23: support_requests). Baseline: production f749c0c8 (.live-base = its public/).
 # Folder: this script's directory. MIGRATIONS = migrate-v1*.sql present in the folder.
 #   dreamint-deploy-v13b -> deploys on top of the live f749c0c8 (test-card admin visibility + share.js nu1, published 2026-11-12 21:45):
 #     QA fixes, ungraded/archive, A/B, M4 + video-sfida (v15), username/album (v16),
@@ -69,6 +73,8 @@ for m in $MIGRATIONS; do
     migrate-v19.sql) probe="SELECT COUNT(*) n FROM pragma_table_info('listings') WHERE name='reserved_sale_id'";;
     migrate-v20.sql) probe="SELECT COUNT(*) n FROM sqlite_master WHERE type='index' AND name='idx_sales_one_paid'";;
     migrate-v21.sql) probe="SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='transfer_code_reveals'";;
+    migrate-v22.sql) probe="SELECT COUNT(*) n FROM pragma_table_info('slabs') WHERE name='submit_fingerprint'";;
+    migrate-v23.sql) probe="SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='support_requests'";;
     *) echo "unknown migration $m"; exit 1;;
   esac
   if [[ "$(q "$probe")" == "[{'n': 0}]" ]]; then echo "applying $m"; npx wrangler d1 execute gemint-beta --remote --file "$m"; else echo "$m already applied"; fi
@@ -79,6 +85,8 @@ done
 [[ " $MIGRATIONS " == *" migrate-v19.sql "* ]] && q "SELECT COUNT(*) n FROM pragma_table_info('listings') WHERE name='reserved_sale_id'"   # expect n = 1
 [[ " $MIGRATIONS " == *" migrate-v20.sql "* ]] && q "SELECT COUNT(*) n FROM sqlite_master WHERE type='index' AND name='idx_sales_one_paid'"   # expect n = 1
 [[ " $MIGRATIONS " == *" migrate-v21.sql "* ]] && q "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='transfer_code_reveals'"   # expect n = 1
+[[ " $MIGRATIONS " == *" migrate-v22.sql "* ]] && q "SELECT COUNT(*) n, (SELECT COUNT(*) FROM slabs WHERE submit_fingerprint IS NOT NULL) filled FROM pragma_table_info('slabs') WHERE name='submit_fingerprint'"   # expect n = 1, filled = 0
+[[ " $MIGRATIONS " == *" migrate-v23.sql "* ]] && q "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='support_requests'"   # expect n = 1
 q "SELECT COUNT(*) users, SUM(email_verified_at IS NULL) unverified FROM users"   # expect unverified = 0
 MIG_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -102,6 +110,11 @@ if has searchCert; then
   curl -s -o /dev/null -w 'search/cert?q=a (expect 400) %{http_code}\n' "$B/api/search/cert?q=a"
   curl -s -o /dev/null -w 'market (expect 200) %{http_code}\n' "$B/api/market"
 fi
+curl -s -o /dev/null -w 'share.js nu1 (expect 200) %{http_code}\n' "$B/js/share.js?v=20261112nu1"
+curl -s $B/ | grep -o '?v=20261112fees1\|?v=20261112nu1\|?v=20261113adm1' | sort | uniq -c
+curl -s -o /dev/null -w 'admin DELETE card as guest (expect 401) %{http_code}\n' -X DELETE -H "origin: $B" "$B/api/admin/cards/x"
+curl -s "$B/api/users/search?q=naso" -w ' (guest search naso)\n'
+curl -s -o /dev/null -X POST -H "origin: $B" -H 'content-type: application/json' -d '{}' -w 'guest POST /api/support (expect 401) %{http_code}\n' "$B/api/support"
 if has handleChatRoutes; then
   curl -s -o /dev/null -w 'guest conversations (expect 401) %{http_code}\n' "$B/api/conversations"
 fi

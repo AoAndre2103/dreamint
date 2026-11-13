@@ -25,8 +25,13 @@ export const IP_RULES = [
   { name: "certsearch", test: (m, p) => m === "GET" && p === "search/cert", limit: 30, windowSec: MIN },
   { name: "market", test: (m, p) => m === "PATCH" && /^cards\/[^/]+\/market$/.test(p), limit: 60, windowSec: HOUR },
   { name: "socialstamp", test: (m, p) => m === "GET" && /^copies\/[^/]+\/social-stamp$/.test(p), limit: 60, windowSec: MIN },
-  { name: "paypal", test: (m, p) => m === "POST" && (p === "paypal/ipn" || p === "paypal/webhook"), limit: 120, windowSec: MIN }
+  { name: "paypal", test: (m, p) => m === "POST" && (p === "paypal/ipn" || p === "paypal/webhook"), limit: 120, windowSec: MIN },
+  // v23 Assistenza: 10/h per IP (plus SUPPORT_USER_RULE 3/h per user, enforced in the handler).
+  { name: "support", test: (m, p) => m === "POST" && p === "support", limit: 10, windowSec: HOUR }
 ];
+
+// v23 Assistenza: max 3 requests per hour per logged-in user.
+export const SUPPORT_USER_RULE = { name: "support-user", limit: 3, windowSec: HOUR };
 
 // Failed logins: per email+IP (stops brute force) and per email (slow distributed attacks).
 export const LOGIN_FAIL_RULES = [

@@ -18,6 +18,14 @@ export function isHiddenTest(row, user) {
   return !!(row && Number(row.is_test) && !canSeeTest(user));
 }
 
+// v23: a card soft-removed by an admin (slabs.archived_reason = 'admin_removed') disappears for
+// everyone except admins (detail pages, photos, /c/ digital copy). Rows must come from s.*.
+export const ADMIN_REMOVED = "admin_removed";
+export function isHiddenCard(row, user) {
+  if (isHiddenTest(row, user)) return true;
+  return !!(row && row.archived_at && row.archived_reason === ADMIN_REMOVED && !canSeeTest(user));
+}
+
 // Lightweight session read for handlers that cannot import getUser from the API router
 // (e.g. the public /c/ Pages function). Returns { id, role } or null.
 export async function loadViewer(request, env) {

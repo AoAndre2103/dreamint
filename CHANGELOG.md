@@ -45,3 +45,11 @@ Registrazione con username e privacy dell’album (Privato predefinito). Album d
 ## Estrazione (reveal-v2, revisione rv3)
 
 Nuova animazione di apertura delle carte gradate. Sui retri c’è il logo DM ufficiale del sito, colorato per rarità (con un alone, senza ricolorare il marchio) e la corona solo sulla Mitica. Le carte ancora da aprire hanno un retro neutro. Le particelle crescono con la rarità: polvere d’oro e scintille sulla Leggendaria; coriandoli, vortice e seconda esplosione sulla Mitica. Si tiene premuto, i retri scorrono rallentando, poi luce, ribaltamento della carta e conteggio del numero di serie.
+
+## v23 — 2026-11-13 (deploy 4b3a6b65)
+- Commissioni e piani (frontend fees1): menu, sezione home, PRO consigliato, calcolatore, admin «Gestisci».
+- Profili con album privato trovabili e visibili a tutti, ma senza carte (solo proprietario e admin le vedono). Admin: ricerca anche per nome visualizzato e account senza username (`/#/u/~<id>`).
+- Admin: rimozione soft di annunci (`DELETE /api/admin/listings/:id`) e carte (`DELETE /api/admin/cards/:id`, `archived_reason='admin_removed'`), atomica, con audit; bloccata con vendita pagata/spedita. Le carte rimosse spariscono per i non-admin da album, mercato, ricerche, feed e `/c/`.
+- `POST /api/cards`: niente richieste doppie (bottone bloccato + dedup server 5 minuti, risposta `200 {card, dedup:true}`); migrate-v22 (`slabs.submit_fingerprint`).
+- Email di verifica e notifiche admin a tutti gli admin del DB + NOTIFY_EMAIL (dedup, una mail per destinatario, batch Resend).
+- Assistenza: form per utenti loggati, rate limit 3/h utente e 10/h IP, email agli admin con reply-to, pannello admin apri/chiudi; migrate-v23 (`support_requests`).

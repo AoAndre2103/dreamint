@@ -35,7 +35,7 @@ import { lookupExternalCatalog, safeExternalCatalogImage } from "../lib/catalog-
 import { handleCertificateRoutes, issueCertificateForSlab, makeTransferCode, transferCodeRotateStmts, notifyDigitalOwnerTransferCode } from "../lib/certificate.js";
 import { handlePriceRoutes, snapshotHits, maybeRefreshModelPrice, attachTrendsToListings, snapshotFromHit } from "../lib/price-history.js";
 import { handleLaunchRoutes, getLaunchState } from "../lib/launch-state.js";
-import { enforceIpRule, assertLoginAllowed, recordLoginFailure, enforceIdentRule } from "../lib/rate-limit.js";
+import { enforceIpRule, assertLoginAllowed, recordLoginFailure, enforceIdentRule, SUPPORT_USER_RULE } from "../lib/rate-limit.js";
 import {
   VERIFY_TOKEN_TTL_MS, CHALLENGE_TTL_MS, RESEND_USER_RULE, randomTokenHex, randomChallengeCode,
   isEmailVerified, requiresVerifiedEmail, emailNotVerifiedError, verificationEmail
@@ -45,7 +45,7 @@ import { listingBlockedReason } from "../lib/listing-status.js";
 import { handleChatRoutes } from "../lib/chat.js";
 import { KINDS, PRICE_COLUMN, effectiveKind, canSellKind, listingValidSql, conflictSql, parseMarketPrice, certSearchValues, CERT_NORM_SQL } from "../lib/markets.js";
 import { normalizeUsername, normalizeQuery, likeEscape, USERNAME_RE } from "../lib/usernames.js";
-import { canSeeTest, testVisibleSql, isHiddenTest } from "../lib/visibility.js";
+import { canSeeTest, testVisibleSql, isHiddenTest, isHiddenCard } from "../lib/visibility.js";
 import { validateChallengeVideo, videoResponse, VIDEO_MAX_BYTES, VIDEO_KV_PREFIX } from "../lib/challenge-video.js";
 import { sanitizeImageDataUrl, parseImageDataUrl, safeImageResponse, TEST_CARD_PNG_DATA_URL } from "../lib/image-safety.js";
 
@@ -105,6 +105,7 @@ const TIER_LABELS = {
   leggendaria: "Leggendaria",
   mitica: "Mitica"
 };
+const SUBMIT_DEDUP_MS = 5 * 60 * 1000;
 const CONDITIONS = [
   { id: "NM", label: "NM — Near Mint" },
   { id: "EX", label: "EX — Excellent" },
@@ -208,7 +209,7 @@ async function route(request, env, path, url) {
   if ((method === "GET" || method === "HEAD") && cardChVideo) return serveChallengeVideo(request, env, cardChVideo[1]);
   if (method === "GET" && path === "me") return me(request, env);
   if (method === "PATCH" && path === "me") return updateMe(request, env);
-  if (method === "GET" && path === "users/search") return searchUsers(env, url);
+  if (method === "GET" && path === "users/search") return searchUsers(request, env, url);
   if (method === "GET" && path === "search/cert") return searchCert(request, env, url);
   const marketM = path.match(/^cards\/([^/]+)\/market$/);
   if (method === "PATCH" && marketM) return updateMarket(request, env, marketM[1]);
@@ -271,6 +272,15 @@ async function route(request, env, path, url) {
   if (method === "GET" && path === "admin/sales") return adminSales(request, env);
   const adm = path.match(/^admin\/cards\/([^/]+)$/);
   if (method === "GET" && adm) return adminCard(request, env, adm[1]);
+  // v23: admin moderation from any album (soft removal, reversible, audited).
+  if (method === "DELETE" && adm) return adminRemoveCard(request, env, adm[1]);
+  // v23 Assistenza
+  if (method === "POST" && path === "support") return createSupportRequest(request, env);
+  if (method === "GET" && path === "admin/support") return adminListSupport(request, env, url);
+  const admSupport = path.match(/^admin\/support\/([^/]+)$/);
+  if (method === "PATCH" && admSupport) return adminUpdateSupport(request, env, admSupport[1]);
+  const admListing = path.match(/^admin\/listings\/([^/]+)$/);
+  if (method === "DELETE" && admListing) return adminRemoveListing(request, env, admListing[1]);
   const admAct = path.match(/^admin\/cards\/([^/]+)\/(approve|reject)$/);
   if (method === "POST" && admAct) {
     return admAct[2] === "approve"
@@ -590,12 +600,91 @@ function parseFromAddress(raw, fallbackEmail, fallbackName) {
 
 function notifyConfigured(env) {
   const to = String(env.NOTIFY_EMAIL || "").trim();
-  const resend = String(env.RESEND_API_KEY || env.NOTIFY_API_KEY || "").trim();
-  const brevo = String(env.BREVO_API_KEY || "").trim();
-  return !!(to && (resend || brevo));
+  return !!(to && notifyProviderConfigured(env));
 }
 
-async function sendNotifyEmail(env, { to, subject, text, html }) {
+function notifyProviderConfigured(env) {
+  const resend = String(env.RESEND_API_KEY || env.NOTIFY_API_KEY || "").trim();
+  const brevo = String(env.BREVO_API_KEY || "").trim();
+  return !!(resend || brevo);
+}
+
+const ADMIN_NOTIFY_MAX = 20;
+const EMAIL_SHAPE_RE = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
+// Reserved / non-deliverable TLDs (e.g. the internal admin@gemint.local account): never sent to.
+const UNDELIVERABLE_TLD_RE = /\.(local|localhost|invalid|internal|lan)$/i;
+
+// v23: admin notification recipients = NOTIFY_EMAIL + every admin in D1 with an email,
+// deduplicated case-insensitively. A DB error falls back to NOTIFY_EMAIL only.
+async function adminNotifyRecipients(env) {
+  const raw = String(env.NOTIFY_EMAIL || "").split(/[,;\s]+/);
+  try {
+    const rows = await env.DB.prepare(
+      "SELECT email FROM users WHERE role = 'admin' AND email IS NOT NULL AND trim(email) != '' ORDER BY created_at LIMIT 100"
+    ).all();
+    for (const r of rows.results || []) raw.push(r.email);
+  } catch (e) {
+    console.log("notify admins lookup failed");
+  }
+  const seen = new Set();
+  const out = [];
+  for (const e of raw) {
+    const v = String(e || "").trim();
+    const k = v.toLowerCase();
+    if (!v || seen.has(k) || !EMAIL_SHAPE_RE.test(v) || UNDELIVERABLE_TLD_RE.test(v)) continue;
+    seen.add(k);
+    out.push(v);
+    if (out.length >= ADMIN_NOTIFY_MAX) break;
+  }
+  return out;
+}
+
+// One separate email per recipient (admins never see each other's address).
+// Resend: a single /emails/batch call (no per-second rate limit hit), one retry on 429/5xx,
+// then per-recipient fallback. Brevo: sequential sends. Never throws.
+async function sendNotifyEmailMany(env, recipients, { subject, text, html: customHtml, replyTo }) {
+  const reply = replyTo && EMAIL_SHAPE_RE.test(String(replyTo).trim()) ? String(replyTo).trim() : null;
+  const list = (recipients || []).filter(Boolean);
+  if (!list.length || !notifyProviderConfigured(env)) return { skipped: true, sent: 0, failed: 0 };
+  const resendKey = String(env.RESEND_API_KEY || env.NOTIFY_API_KEY || "").trim();
+  const brevoKey = String(env.BREVO_API_KEY || "").trim();
+  const provider = String(env.NOTIFY_PROVIDER || (brevoKey && !resendKey ? "brevo" : "resend")).toLowerCase();
+  const html = customHtml || "<p>" + String(text || "").split("\n").map((line) =>
+    line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  ).join("<br>") + "</p>";
+  if (provider === "resend" && list.length > 1) {
+    const from = env.NOTIFY_FROM || "DreaMint <noreply@dreamint.it>";
+    const base = String(env.RESEND_API_URL || "https://api.resend.com/emails").replace(/\/+$/, "");
+    const batchUrl = /\/emails$/.test(base) ? base + "/batch" : base.replace(/\/emails\/batch$/, "") + "/emails/batch";
+    const payload = JSON.stringify(list.map((to) => ({ from, to: [to], subject, text, html, ...(reply ? { reply_to: reply } : {}) })));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(batchUrl, {
+          method: "POST",
+          headers: { authorization: "Bearer " + resendKey, "content-type": "application/json" },
+          body: payload
+        });
+        await res.text().catch(() => "");
+        if (res.ok) return { ok: true, sent: list.length, failed: 0, provider: "resend", batch: true };
+        console.log("notify resend batch", res.status);
+        if (res.status !== 429 && res.status < 500) break;
+      } catch (err) {
+        console.log("notify batch error", err && err.message);
+      }
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1100));
+    }
+  }
+  let sent = 0, failed = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (i > 0 && provider === "resend") await new Promise((r) => setTimeout(r, 550)); // Resend default: 2 req/s
+    const r = await sendNotifyEmail(env, { to: list[i], subject, text, html, replyTo: reply }).catch(() => ({ ok: false }));
+    if (r && r.ok) sent++; else failed++;
+  }
+  return { ok: failed === 0, sent, failed };
+}
+
+async function sendNotifyEmail(env, { to, subject, text, html, replyTo }) {
+  const reply = replyTo && EMAIL_SHAPE_RE.test(String(replyTo).trim()) ? String(replyTo).trim() : null;
   const dest = String(to || env.NOTIFY_EMAIL || "").trim();
   const resendKey = String(env.RESEND_API_KEY || env.NOTIFY_API_KEY || "").trim();
   const brevoKey = String(env.BREVO_API_KEY || "").trim();
@@ -615,6 +704,7 @@ async function sendNotifyEmail(env, { to, subject, text, html }) {
         body: JSON.stringify({
           sender: from,
           to: [{ email: dest }],
+          ...(reply ? { replyTo: { email: reply } } : {}),
           subject,
           textContent: text,
           htmlContent: html
@@ -630,7 +720,7 @@ async function sendNotifyEmail(env, { to, subject, text, html }) {
     const res = await fetch(String(env.RESEND_API_URL || "https://api.resend.com/emails"), {
       method: "POST",
       headers: { authorization: "Bearer " + resendKey, "content-type": "application/json" },
-      body: JSON.stringify({ from, to: [dest], subject, text, html })
+      body: JSON.stringify({ from, to: [dest], subject, text, html, ...(reply ? { reply_to: reply } : {}) })
     });
     const raw = await res.text();
     let data = null;
@@ -650,7 +740,7 @@ async function sendNotifyEmail(env, { to, subject, text, html }) {
 }
 
 async function notifyAdminSafe(env, request, msg) {
-  if (!notifyConfigured(env) || !msg) return { skipped: true };
+  if (!notifyProviderConfigured(env) || !msg) return { skipped: true };
   const lines = [msg.title, ""];
   if (msg.cardName) lines.push("Carta: " + msg.cardName);
   if (msg.setName) lines.push("Set: " + msg.setName);
@@ -661,10 +751,14 @@ async function notifyAdminSafe(env, request, msg) {
   if (msg.amount) lines.push("Importo: " + msg.amount);
   if (msg.link) { lines.push(""); lines.push("Apri: " + msg.link); }
   const text = lines.join("\n");
-  return sendNotifyEmail(env, { subject: msg.subject, text }).catch((err) => {
+  try {
+    const recipients = await adminNotifyRecipients(env);
+    if (!recipients.length) return { skipped: true };
+    return await sendNotifyEmailMany(env, recipients, { subject: msg.subject, text });
+  } catch (err) {
     console.log("notify error", err && err.message);
     return { ok: false };
-  });
+  }
 }
 
 async function readJson(request) {
@@ -1138,6 +1232,27 @@ async function registerCard(request, env) {
   const cardmarket_avg_cents = parseCardmarketAvgCents(body);
   const id = crypto.randomUUID();
   const grade = is_ungraded ? null : (body.grade ? String(body.grade).slice(0, 20) : null);
+  // v23 dedup: same user + same card (model, grader/cert or condition, price) + same front photo
+  // within SUBMIT_DEDUP_MS while still in review = the same request sent twice (double click /
+  // retry). The INSERT below is conditional, so concurrent duplicates cannot both be created.
+  const submit_fingerprint = await sha256Hex([
+    "v1", user.id, model.id, grader, is_ungraded ? "" : certificate_no, grade || "", condition || "",
+    parsedPrice.cents == null ? "" : String(parsedPrice.cents), await sha256Hex(photos.front.original)
+  ].join("|"));
+  const dedupSince = new Date(Date.now() - SUBMIT_DEDUP_MS).toISOString();
+  const findDup = () => env.DB.prepare(
+    `SELECT id FROM slabs WHERE submitter_id = ? AND submit_fingerprint = ? AND status = 'in_review'
+       AND archived_at IS NULL AND created_at >= ? ORDER BY created_at LIMIT 1`
+  ).bind(user.id, submit_fingerprint, dedupSince).first();
+  const dedupResponse = async (dupId) => {
+    const dupSlab = await loadSlab(env, dupId);
+    const dupCard = presentSlab(dupSlab, user, true);
+    return json({ card: dupCard, dedup: true }, 200);
+  };
+  if (is_ungraded) {
+    const early = await findDup();
+    if (early) return dedupResponse(early.id);
+  }
   if (challengeRow) {
     const used = await env.DB.prepare(
       "UPDATE challenge_codes SET used_at = ?, slab_id = ? WHERE id = ? AND user_id = ? AND used_at IS NULL AND expires_at > ?"
@@ -1146,20 +1261,28 @@ async function registerCard(request, env) {
       return json({ error: "Codice-sfida già usato o scaduto: ricarica la pagina per averne uno nuovo e rifai la foto", code: "challenge_invalid" }, 400);
     }
   }
-  await env.DB.prepare(
+  const ins = await env.DB.prepare(
     `INSERT INTO slabs (
       id, card_model_id, submitter_id, physical_owner_id, digital_owner_id,
       grader, certificate_no, grade, is_ungraded, status,
       challenge_code, challenge_expires_at, server_seed, commit_hash, client_nonce, created_at,
-      card_condition, is_test, asking_price_cents, cardmarket_avg_cents
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_review', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      card_condition, is_test, asking_price_cents, cardmarket_avg_cents, submit_fingerprint
+    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_review', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM slabs d WHERE d.submitter_id = ? AND d.submit_fingerprint = ?
+                          AND d.status = 'in_review' AND d.archived_at IS NULL AND d.created_at >= ?)`
   ).bind(
     id, model.id, user.id, user.id, user.id,
     grader, certificate_no, grade, is_ungraded ? 1 : 0,
     challenge_code, is_ungraded ? null : challengeRow.expires_at,
     server_seed, commit_hash, client_nonce, nowIso(),
-    condition, parsedPrice.cents, cardmarket_avg_cents
+    condition, parsedPrice.cents, cardmarket_avg_cents, submit_fingerprint,
+    user.id, submit_fingerprint, dedupSince
   ).run();
+  if (!ins.meta || !ins.meta.changes) {
+    const dup = await findDup();
+    if (dup) return dedupResponse(dup.id);
+    return json({ error: "Richiesta già inviata: controlla il tuo album", code: "duplicate_submit" }, 409);
+  }
   for (const k of kinds) {
     if (!photos[k]) continue;
     await env.PHOTOS.put(`photo:${id}:${k}`, photos[k].original);
@@ -1512,7 +1635,7 @@ async function archiveCard(request, env, id) {
 async function getCard(request, env, id) {
   const user = await getUser(request, env);
   const slab = await loadSlab(env, id);
-  if (!slab || isHiddenTest(slab, user)) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenCard(slab, user)) return json({ error: "Carta non trovata" }, 404);
   const priv = isOwner(slab, user);
   // SECURITY (M2): cards in review / rejected are visible only to the owner or an admin.
   if (!priv && (slab.status === "in_review" || slab.status === "rejected")) return json({ error: "Carta non trovata" }, 404);
@@ -1527,7 +1650,7 @@ async function getCard(request, env, id) {
 
 async function publicCard(env, id) {
   const slab = await loadSlab(env, id);
-  if (!slab || isHiddenTest(slab, null)) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenCard(slab, null)) return json({ error: "Carta non trovata" }, 404);
   if (slab.status === "in_review" || slab.status === "rejected") {
     return json({ error: "Questa carta non è pubblica" }, 404);
   }
@@ -1541,7 +1664,7 @@ async function servePhoto(request, env, slabId, kind, url) {
   if (!allowed.includes(kind)) return json({ error: "Foto sconosciuta" }, 404);
   const user = await getUser(request, env);
   const slab = await loadSlab(env, slabId);
-  if (!slab || isHiddenTest(slab, user)) return json({ error: "Carta non trovata" }, 404);
+  if (!slab || isHiddenCard(slab, user)) return json({ error: "Carta non trovata" }, 404);
   const owner = isOwner(slab, user);
   const admin = user && user.role === "admin";
   const publicKind = (kind === "front" || kind === "back" || kind === "cert") && slab.status !== "in_review" && slab.status !== "rejected";
@@ -1568,7 +1691,7 @@ async function listRecent(request, env) {
             m.game, m.set_name, m.code_printed, m.name AS card_name, m.language, m.catalog_image
      FROM slabs s
      JOIN card_models m ON m.id = s.card_model_id
-     WHERE s.status IN ('approved', 'listed') AND ${testVisibleSql(user)}
+     WHERE s.status IN ('approved', 'listed') AND ${testVisibleSql(user)} AND (s.archived_reason IS NULL OR s.archived_reason <> 'admin_removed')
      ORDER BY s.created_at DESC
      LIMIT 12`
   ).all();
@@ -2033,7 +2156,7 @@ async function adminQueue(request, env) {
      FROM slabs s
      JOIN card_models m ON m.id = s.card_model_id
      JOIN users u ON u.id = s.submitter_id
-     WHERE s.status = 'in_review'
+     WHERE s.status = 'in_review' AND s.archived_at IS NULL
      ORDER BY s.created_at ASC`
   ).all();
   const items = [];
@@ -2238,6 +2361,189 @@ async function adminCreateTestCard(request, env) {
   const out = { card: presentSlab(fresh, admin, true) };
   if (issued && issued.code) out.transfer_code = issued.code;
   return json(out, 201);
+}
+
+// v23 admin moderation. Nothing is deleted: a listing becomes 'cancelled', a card is soft-archived
+// (archived_reason 'admin_removed') and leaves albums, market and search. All in one D1 batch
+// (atomic); refused while a payment is confirmed or a shipment is open.
+const OPEN_PAID_SALE_SQL = "status IN ('paid','shipped')";
+async function adminRemoveListing(request, env, listingId) {
+  const admin = await requireAdmin(request, env);
+  const body = request.headers.get("content-type") ? await readJson(request).catch(() => ({})) : {};
+  const reason = String((body && body.reason) || "").trim().slice(0, 200);
+  const l = await env.DB.prepare("SELECT id, slab_id, status, seller_id FROM listings WHERE id = ?").bind(listingId).first();
+  if (!l) return json({ error: "Annuncio non trovato" }, 404);
+  if (!["active", "paused"].includes(l.status)) {
+    return json({ error: l.status === "reserved" ? "Annuncio con pagamento confermato: gestisci prima la vendita" : "Annuncio già chiuso", code: "listing_not_open" }, 409);
+  }
+  const at = nowIso();
+  const done = "EXISTS (SELECT 1 FROM audit_logs WHERE id = ?)";
+  const auditId = crypto.randomUUID();
+  const res = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE listings SET status = 'cancelled' WHERE id = ? AND status IN ('active','paused')
+         AND NOT EXISTS (SELECT 1 FROM sales WHERE listing_id = ? AND ${OPEN_PAID_SALE_SQL})`
+    ).bind(listingId, listingId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, actor_id, action, entity, entity_id, payload, created_at)
+       SELECT ?, ?, 'admin_remove_listing', 'listing', ?, ?, ? WHERE changes() > 0`
+    ).bind(auditId, admin.id, listingId, JSON.stringify({ slab_id: l.slab_id, seller_id: l.seller_id, previous_status: l.status, reason }), at),
+    env.DB.prepare(
+      "UPDATE sales SET status = 'cancelled' WHERE listing_id = ? AND status IN ('requested','accepted') AND " + done
+    ).bind(listingId, auditId),
+    refreshSlabStatusStmt(env, l.slab_id, done, [auditId])
+  ]);
+  if (!res[0].meta || !res[0].meta.changes) {
+    return json({ error: "Annuncio con pagamento confermato o già chiuso: gestisci prima la vendita", code: "listing_not_open" }, 409);
+  }
+  return json({ ok: true, listing_id: listingId, status: "cancelled", cancelled_requests: (res[2].meta && res[2].meta.changes) || 0 });
+}
+
+async function adminRemoveCard(request, env, slabId) {
+  const admin = await requireAdmin(request, env);
+  const body = request.headers.get("content-type") ? await readJson(request).catch(() => ({})) : {};
+  const reason = String((body && body.reason) || "").trim().slice(0, 200);
+  const slab = await env.DB.prepare("SELECT id, status, archived_at, physical_owner_id, digital_owner_id, is_ungraded FROM slabs WHERE id = ?").bind(slabId).first();
+  if (!slab) return json({ error: "Carta non trovata" }, 404);
+  if (slab.archived_at) return json({ error: "Carta già rimossa", code: "already_removed" }, 409);
+  const at = nowIso();
+  const auditId = crypto.randomUUID();
+  const done = "EXISTS (SELECT 1 FROM audit_logs WHERE id = ?)";
+  const res = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE slabs SET archived_at = ?, archived_reason = 'admin_removed'
+       WHERE id = ? AND archived_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM sales WHERE slab_id = ? AND ${OPEN_PAID_SALE_SQL})
+         AND NOT EXISTS (SELECT 1 FROM listings WHERE slab_id = ? AND status = 'reserved')`
+    ).bind(at, slabId, slabId, slabId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, actor_id, action, entity, entity_id, payload, created_at)
+       SELECT ?, ?, 'admin_remove_card', 'slab', ?, ?, ? WHERE changes() > 0`
+    ).bind(auditId, admin.id, slabId, JSON.stringify({ previous_status: slab.status, physical_owner_id: slab.physical_owner_id, digital_owner_id: slab.digital_owner_id, reason }), at),
+    env.DB.prepare(
+      "UPDATE sales SET status = 'cancelled' WHERE slab_id = ? AND status IN ('requested','accepted') AND " + done
+    ).bind(slabId, auditId),
+    env.DB.prepare(
+      "UPDATE listings SET status = 'cancelled' WHERE slab_id = ? AND status IN ('active','paused') AND " + done
+    ).bind(slabId, auditId)
+  ]);
+  if (!res[0].meta || !res[0].meta.changes) {
+    return json({ error: "C’è un pagamento confermato o una spedizione in corso su questa carta: gestisci prima la vendita", code: "open_sale" }, 409);
+  }
+  return json({ ok: true, card_id: slabId, archived_at: at, archived_reason: "admin_removed",
+    cancelled_listings: (res[3].meta && res[3].meta.changes) || 0, cancelled_requests: (res[2].meta && res[2].meta.changes) || 0 });
+}
+
+// ---------- v23 Assistenza (support requests) ----------
+const SUPPORT_CATEGORIES = {
+  technical: "Problema tecnico",
+  user_report: "Segnalazione utente",
+  payment: "Pagamento",
+  other: "Altro"
+};
+function escHtml(v) {
+  return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+function cleanLine(v, max) {
+  return String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max + 1);
+}
+async function createSupportRequest(request, env) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const subject = cleanLine(body && body.subject, 120);
+  const category = String((body && body.category) || "").trim();
+  const message = String((body && body.message) || "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim();
+  const rawLink = cleanLine(body && body.link, 500);
+  if (subject.length < 3 || subject.length > 120) return json({ error: "L’oggetto deve avere da 3 a 120 caratteri", code: "invalid_subject" }, 400);
+  if (!Object.prototype.hasOwnProperty.call(SUPPORT_CATEGORIES, category)) return json({ error: "Scegli una categoria", code: "invalid_category" }, 400);
+  if (message.length < 10 || message.length > 4000) return json({ error: "Il messaggio deve avere da 10 a 4000 caratteri", code: "invalid_message" }, 400);
+  let link = null;
+  if (rawLink) {
+    let u = null;
+    try { u = new URL(rawLink); } catch (e) { u = null; }
+    if (!u || !/^https?:$/.test(u.protocol) || rawLink.length > 500) return json({ error: "Il link deve iniziare con https:// (max 500 caratteri)", code: "invalid_link" }, 400);
+    link = u.toString().slice(0, 500);
+  }
+  await enforceIdentRule(env, SUPPORT_USER_RULE, user.id);
+  const id = crypto.randomUUID();
+  const at = nowIso();
+  await env.DB.prepare(
+    `INSERT INTO support_requests (id, user_id, subject, category, message, link, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`
+  ).bind(id, user.id, subject, category, message, link, at).run();
+  await audit(env, user.id, "support_request", "support_request", id, { category });
+  const who = (user.username ? "@" + user.username + " · " : "") + (user.display_name || "");
+  const adminLink = siteOrigin(request) + "/#/admin/assistenza";
+  const text = [
+    "Nuova richiesta di assistenza.", "",
+    "Categoria: " + SUPPORT_CATEGORIES[category],
+    "Oggetto: " + subject,
+    "Utente: " + who + " <" + user.email + ">",
+    link ? "Link: " + link : null, "",
+    message, "",
+    "Rispondi a questa email per scrivere all’utente.",
+    "Pannello: " + adminLink
+  ].filter((x) => x !== null).join("\n");
+  const html = "<p><b>Nuova richiesta di assistenza.</b></p>" +
+    "<p>Categoria: " + escHtml(SUPPORT_CATEGORIES[category]) + "<br>Oggetto: " + escHtml(subject) +
+    "<br>Utente: " + escHtml(who) + " &lt;" + escHtml(user.email) + "&gt;" +
+    (link ? "<br>Link: " + escHtml(link) : "") + "</p>" +
+    "<p style=\"white-space:pre-wrap\">" + escHtml(message) + "</p>" +
+    "<p>Rispondi a questa email per scrivere all’utente.<br>Pannello: " + escHtml(adminLink) + "</p>";
+  let mail = { skipped: true };
+  try {
+    const recipients = await adminNotifyRecipients(env);
+    if (recipients.length) {
+      mail = await sendNotifyEmailMany(env, recipients, {
+        subject: "DreaMint assistenza: " + subject.slice(0, 90) + " [" + SUPPORT_CATEGORIES[category] + "]",
+        text, html, replyTo: user.email
+      });
+    }
+  } catch (e) {
+    console.log("support notify error", e && e.message);
+  }
+  return json({ ok: true, request: { id, subject, category, status: "open", created_at: at }, notified: !!(mail && mail.ok) }, 201);
+}
+
+async function adminListSupport(request, env, url) {
+  await requireAdmin(request, env);
+  const st = String((url && url.searchParams.get("status")) || "open");
+  const where = st === "all" ? "1=1" : st === "closed" ? "r.status = 'closed'" : "r.status = 'open'";
+  const rows = await env.DB.prepare(
+    `SELECT r.id, r.subject, r.category, r.message, r.link, r.status, r.created_at, r.closed_at,
+            u.username, u.display_name, u.email, cb.display_name AS closed_by_name
+     FROM support_requests r
+     LEFT JOIN users u ON u.id = r.user_id
+     LEFT JOIN users cb ON cb.id = r.closed_by
+     WHERE ${where}
+     ORDER BY r.created_at DESC
+     LIMIT 200`
+  ).all();
+  const counts = await env.DB.prepare(
+    "SELECT SUM(status = 'open') AS open, SUM(status = 'closed') AS closed FROM support_requests"
+  ).first();
+  return json({
+    status: st,
+    counts: { open: Number(counts && counts.open) || 0, closed: Number(counts && counts.closed) || 0 },
+    requests: (rows.results || []).map((r) => ({ ...r, category_label: SUPPORT_CATEGORIES[r.category] || r.category }))
+  });
+}
+
+async function adminUpdateSupport(request, env, id) {
+  const admin = await requireAdmin(request, env);
+  const body = await readJson(request);
+  const status = String((body && body.status) || "");
+  if (status !== "open" && status !== "closed") return json({ error: "Stato non valido (open o closed)", code: "invalid_status" }, 400);
+  const row = await env.DB.prepare("SELECT id, status FROM support_requests WHERE id = ?").bind(id).first();
+  if (!row) return json({ error: "Richiesta non trovata" }, 404);
+  const at = nowIso();
+  if (status === "closed") {
+    await env.DB.prepare("UPDATE support_requests SET status = 'closed', closed_at = ?, closed_by = ? WHERE id = ?").bind(at, admin.id, id).run();
+  } else {
+    await env.DB.prepare("UPDATE support_requests SET status = 'open', closed_at = NULL, closed_by = NULL WHERE id = ?").bind(id).run();
+  }
+  await audit(env, admin.id, status === "closed" ? "support_close" : "support_reopen", "support_request", id, { from: row.status });
+  return json({ ok: true, id, status, closed_at: status === "closed" ? at : null });
 }
 
 async function audit(env, actorId, action, entity, entityId, payload) {
@@ -2689,38 +2995,83 @@ async function searchCert(request, env, url) {
   }, 200, { "cache-control": "no-store" });
 }
 
-async function searchUsers(env, url) {
+async function searchUsers(request, env, url) {
   const q = normalizeQuery(url && url.searchParams.get("q"));
   if (!q) return json({ error: "Scrivi da 2 a 30 caratteri", code: "query_too_short" }, 400);
   const like = likeEscape(q);
+  const viewer = await getUser(request, env);
+  if (viewer && viewer.role === "admin") {
+    // v23: admins find every album, private ones and accounts without a username too
+    // (matched on username or display name). Private albums carry private: true.
+    const rows = await env.DB.prepare(
+      `SELECT u.id, u.username, u.display_name, u.album_public, u.role,
+              (SELECT COUNT(*) FROM slabs s WHERE s.physical_owner_id = u.id
+                 AND s.status IN ('approved','listed') AND s.archived_at IS NULL) AS cards_count,
+              CASE WHEN u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END AS rank
+       FROM users u
+       WHERE u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\'
+       ORDER BY rank, cards_count DESC, u.username
+       LIMIT 20`
+    ).bind(like + "%", like + "%", "%" + like + "%", "%" + like + "%").all();
+    return json({
+      admin_view: true,
+      users: (rows.results || []).map((r) => ({
+        username: r.username || null,
+        display_name: r.display_name || null,
+        album_ref: r.username || ("~" + r.id),
+        private: !r.album_public,
+        is_admin: r.role === "admin",
+        cards_count: Number(r.cards_count) || 0
+      }))
+    }, 200, { "cache-control": "no-store" });
+  }
+  // v23 (Andrea 13/11): private profiles are findable too (private: true), but their card count
+  // is not disclosed; their cards stay hidden in the album API.
   const rows = await env.DB.prepare(
-    `SELECT u.username,
-            (SELECT COUNT(*) FROM slabs s WHERE s.physical_owner_id = u.id AND ${ALBUM_CARD_WHERE}) AS cards_count,
+    `SELECT u.username, u.album_public,
+            CASE WHEN u.album_public = 1 THEN
+              (SELECT COUNT(*) FROM slabs s WHERE s.physical_owner_id = u.id AND ${ALBUM_CARD_WHERE}) ELSE NULL END AS cards_count,
             CASE WHEN u.username LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END AS rank
      FROM users u
-     WHERE u.album_public = 1 AND u.username IS NOT NULL AND u.username LIKE ? ESCAPE '\\'
-     ORDER BY rank, cards_count DESC, u.username
+     WHERE u.username IS NOT NULL AND u.username LIKE ? ESCAPE '\\'
+     ORDER BY rank, u.album_public DESC, cards_count DESC, u.username
      LIMIT 20`
   ).bind(like + "%", "%" + like + "%").all();
-  return json({ users: (rows.results || []).map((r) => ({ username: r.username, cards_count: Number(r.cards_count) || 0 })) },
-    200, { "cache-control": "no-store" });
+  return json({ users: (rows.results || []).map((r) => ({
+    username: r.username,
+    private: !r.album_public,
+    cards_count: r.album_public ? (Number(r.cards_count) || 0) : null
+  })) }, 200, { "cache-control": "no-store" });
 }
 
 async function userAlbum(request, env, rawName) {
   const notFound = () => json({ error: "Album non trovato", code: "not_found" }, 404, { "cache-control": "no-store" });
   let name;
   try { name = decodeURIComponent(rawName).trim().toLowerCase(); } catch (e) { return notFound(); }
-  if (!USERNAME_RE.test(name)) return notFound();
   const viewer = await getUser(request, env);
+  const isAdmin = !!(viewer && viewer.role === "admin");
   const albumWhere = "s.status IN ('approved','listed') AND s.archived_at IS NULL AND " + testVisibleSql(viewer);
-  // Missing user, private album and NULL username give the same 404.
-  const u = await env.DB.prepare("SELECT id, username FROM users WHERE lower(username) = ? AND username IS NOT NULL AND album_public = 1")
-    .bind(name).first();
+  let u = null;
+  if (isAdmin && /^~[0-9a-f-]{8,64}$/.test(name)) {
+    // v23: admin-only album address by user id ("~<id>") for accounts without a username.
+    u = await env.DB.prepare("SELECT id, username, display_name, album_public FROM users WHERE id = ?").bind(name.slice(1)).first();
+  } else {
+    if (!USERNAME_RE.test(name)) return notFound();
+    // Missing user and NULL username give the same 404. Private profiles exist publicly (v23).
+    u = await env.DB.prepare(
+      "SELECT id, username, display_name, album_public FROM users WHERE lower(username) = ? AND username IS NOT NULL"
+    ).bind(name).first();
+  }
   if (!u) return notFound();
+  const isOwnerView = !!(viewer && viewer.id === u.id);
+  if (!u.album_public && !isAdmin && !isOwnerView) {
+    // Private album: the profile is visible, the cards are not (not even their number).
+    return json({ username: u.username, private: true, cards_count: null, cards: [] }, 200, { "cache-control": "no-store" });
+  }
   const rows = await env.DB.prepare(
     `SELECT s.id, s.is_ungraded, s.is_test, s.grader, s.grade, s.card_condition, s.rarity_tier, s.serial_number, s.serial_total_at_assignment,
             s.opened_at, s.status, m.game, m.name AS card_name, m.set_name, m.code_printed, m.language, m.variant,
-            c.registered_count, li.price_cents AS listing_price_cents
+            c.registered_count, li.price_cents AS listing_price_cents, li.id AS listing_id
      FROM slabs s
      JOIN card_models m ON m.id = s.card_model_id
      LEFT JOIN card_model_counters c ON c.card_model_id = s.card_model_id
@@ -2759,10 +3110,20 @@ async function userAlbum(request, env, rawName) {
       public_url: (revealed && r.rarity_tier && r.serial_number) ? "/c/" + id : null,
       in_vendita: forSale,
       on_sale: forSale, // alias read by app.js normalizePublicCard
-      price_cents: forSale ? r.listing_price_cents : null
+      price_cents: forSale ? r.listing_price_cents : null,
+      ...(isAdmin ? { listing_id: forSale ? r.listing_id : null } : {})
     };
   });
-  return json({ username: u.username, cards_count: Number(cnt && cnt.n) || 0, cards }, 200, { "cache-control": "no-store" });
+  const out = { username: u.username, cards_count: Number(cnt && cnt.n) || 0, cards };
+  if (!u.album_public) out.private = true;
+  if (isOwnerView) out.owner_view = true;
+  if (isAdmin) {
+    out.admin_view = true;
+    out.private = !u.album_public;
+    out.album_ref = u.username || ("~" + u.id);
+    out.display_name = u.display_name || null;
+  }
+  return json(out, 200, { "cache-control": "no-store" });
 }
 
 async function loadSaleForPaypal(env, saleId) {

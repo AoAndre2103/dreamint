@@ -343,3 +343,23 @@ CREATE TABLE IF NOT EXISTS launch_state_log (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_launch_log_created ON launch_state_log(created_at);
+-- v22 (additive only, no writes on existing rows): fingerprint of a card submission
+-- (same user + same card + same front photo) used by POST /api/cards to collapse
+-- double submits made within 5 minutes. Existing rows keep NULL.
+ALTER TABLE slabs ADD COLUMN submit_fingerprint TEXT;
+CREATE INDEX IF NOT EXISTS idx_slabs_submit_fp ON slabs(submitter_id, submit_fingerprint);
+-- v23 (additive only, no writes on existing rows): «Assistenza» requests from logged-in users.
+CREATE TABLE IF NOT EXISTS support_requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  category TEXT NOT NULL,
+  message TEXT NOT NULL,
+  link TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL,
+  closed_at TEXT,
+  closed_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_support_status ON support_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_support_user ON support_requests(user_id, created_at);

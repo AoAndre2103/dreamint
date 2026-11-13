@@ -195,6 +195,8 @@
     if (m.can_set_fullset && m.can_set_digital) {
       html += '<p class="dim">' + esc(tr("list.atLeastOne")) + "</p>";
     }
+    var feesLink = '<a href="#/commissioni" data-link>' + esc(tr("sell.feesLink")) + "</a>";
+    html += '<p class="dim fees-hint">' + tr("sell.feesHint").replace("{link}", feesLink) + "</p>";
     html += '<p class="error" id="list-err" hidden></p>';
     html += '<button class="btn primary" type="submit">' + esc(tr("card.publish")) + "</button></form>";
     return html;
