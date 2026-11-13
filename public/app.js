@@ -624,20 +624,45 @@
       '<a href="#/assistenza" data-link>' + esc(tr("nav.support")) + "</a></p></section>";
   }
   // v26: plan choice (preference only; BETA is free). Order FREE · PRO (Consigliato, centre) · BUSINESS.
-  function planPickerHtml() {
+  function planPickerHtml(selected) {
     var plans = (state.cfg && state.cfg.plans && state.cfg.plans.length) ? state.cfg.plans : ((window.GEMINT_CONFIG && window.GEMINT_CONFIG.plans) || []);
     var fmtPct = function (b) { var x = (b / 100).toFixed(1).replace(/\.0$/, ""); return (langIsEn() ? x : x.replace(".", ",")) + "%"; };
     return '<fieldset class="privacy-choice plan-choice"><legend>' + esc(tr("plan.legend")) + "</legend>" +
       plans.map(function (p) {
         var rec = p.id === "pro";
-        return '<label class="privacy-option"' + (rec ? ' style="border:2px solid #02AC79;border-radius:12px"' : "") + '><input type="radio" name="plan" value="' + esc(p.id) + '" required><span><strong>' + esc(p.label) +
-          (rec ? ' <span class="pill" style="background:#02AC79;color:#07131C">' + esc(tr("fee.recommended")) + "</span>" : "") + "</strong><em>" +
+        return '<label class="privacy-option' + (rec ? " plan-recommended" : "") + '"><input type="radio" name="plan" value="' + esc(p.id) + '"' + (selected === p.id ? " checked" : "") + " required><span><strong>" + esc(p.label) +
+          (rec ? ' <span class="pill pill-recommended">' + esc(tr("fee.recommended")) + "</span>" : "") + "</strong><em>" +
           esc(tr("plan.month", { price: euros(p.monthly_cents) })) + " · " + esc(tr("plan.fee", { pct: fmtPct(Number(p.fee_bps) || 0) })) + "</em></span></label>";
       }).join("") +
       '<p class="notice plan-beta-note">' + esc(tr("plan.betaNote")) + "</p></fieldset>";
   }
+  // Profilo: vedere e cambiare il piano (solo preferenza in BETA). Gli admin sono esenti.
+  function accountPlanHtml() {
+    if (!state.user) return "";
+    if (state.user.plan_exempt) return '<p class="notice plan-exempt-note">' + esc(tr("plan.exempt")) + "</p>";
+    return '<form id="plan-form" class="plan-account" novalidate><h3>' + esc(tr("plan.accountTitle")) + "</h3>" + planPickerHtml(state.user.plan || "") +
+      '<p class="error" id="plan-account-err" hidden></p><p class="ok" id="plan-account-ok" hidden></p>' +
+      '<button class="btn" type="submit" id="plan-account-save">' + esc(tr("plan.save")) + "</button></form>";
+  }
+  function bindPlanForm() {
+    var f = document.getElementById("plan-form");
+    if (!f) return;
+    var err = document.getElementById("plan-account-err"), ok = document.getElementById("plan-account-ok"), save = document.getElementById("plan-account-save");
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      err.hidden = true; ok.hidden = true;
+      var plan = (new FormData(f)).get("plan");
+      if (!plan) { err.hidden = false; err.textContent = tr("plan.required"); return; }
+      save.disabled = true;
+      api("me/plan", { method: "POST", body: { plan: plan } }).then(function (d) {
+        state.user = d.user || Object.assign({}, state.user, { plan: plan, needs_plan: false });
+        save.disabled = false;
+        ok.hidden = false; ok.textContent = tr("plan.changed");
+      }).catch(function (e2) { save.disabled = false; err.hidden = false; err.textContent = (e2 && e2.message) || tr("plan.required"); });
+    });
+  }
   function pagePlanGate() {
-    return '<section class="panel plan-gate" style="max-width:560px;margin:24px auto"><h1>' + esc(tr("plan.title")) + "</h1>" +
+    return '<section class="panel plan-gate"><h1>' + esc(tr("plan.title")) + "</h1>" +
       "<p>" + esc(tr("plan.lede")) + "</p>" +
       '<form id="plan-gate-form" novalidate>' + planPickerHtml() +
       '<p class="error" id="plan-err" hidden></p>' +
@@ -1656,6 +1681,7 @@
         ? '<p><span class="pill gold">' + esc(tr("account.referred", { name: state.user.referred_by.name })) + "</span></p>"
         : "") +
       accountPrivacyHtml() +
+      accountPlanHtml() +
       '<form id="paypal-form" style="margin-top:18px"><label class="field">' + tr("account.paypal") + '<input name="paypal_email" type="email" value="' + esc(state.user.paypal_email || "") + '" placeholder="' + esc(tr("account.paypalPh")) + '" autocomplete="email"></label>' +
       '<p class="dim">' + tr("account.paypalHint") + "</p>" +
       '<p class="error" id="paypal-err" hidden></p><p class="ok" id="paypal-ok" hidden></p>' +
@@ -3251,6 +3277,7 @@
         };
         bindUsernameForm();
         bindPrivacyToggle();
+        bindPlanForm();
         return;
       }
       if (p[0] === "registra") {

@@ -28,7 +28,7 @@ const admin = client(), admin2 = client(), seller = client(), buyer = client(), 
 const mk = async (c, n, extra = {}) => {
   c.email = `t23${n}-${ts}@example.com`;
   c.username = `t23${n}_${tag}`.slice(0, 20);
-  await c.call("POST", "/api/auth/signup", { email: c.email, password: pw, display_name: extra.display_name || n, username: c.username, album_public: !!extra.public });
+  await c.call("POST", "/api/auth/signup", { email: c.email, password: pw, display_name: extra.display_name || n, username: c.username, plan: "free", album_public: !!extra.public });
 };
 await mk(admin, "adm"); await mk(admin2, "nasoadm", { display_name: "Naso " + tag });
 await mk(seller, "sel", { public: false }); await mk(buyer, "buy"); await mk(user, "usr");

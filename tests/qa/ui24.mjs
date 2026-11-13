@@ -21,8 +21,8 @@ const check = (n, ok, info = "") => { out.push((ok ? "PASS " : "FAIL ") + n + (i
 d1("DELETE FROM rate_limits");
 const ts = Date.now(), tag = ts.toString(36).slice(-5);
 const seller = client(), admin = client(), anon = client();
-await seller.call("POST", "/api/auth/signup", { email: `u24s-${ts}@example.com`, password: pw, display_name: `U24 seller ${tag}`, username: `sell_${tag}`, album_public: true });
-await admin.call("POST", "/api/auth/signup", { email: `u24a-${ts}@example.com`, password: pw, display_name: `U24 admin ${tag}`, username: `adm_${tag}` });
+await seller.call("POST", "/api/auth/signup", { email: `u24s-${ts}@example.com`, password: pw, display_name: `U24 seller ${tag}`, username: `sell_${tag}`, plan: "free", album_public: true });
+await admin.call("POST", "/api/auth/signup", { email: `u24a-${ts}@example.com`, password: pw, display_name: `U24 admin ${tag}`, username: `adm_${tag}`, plan: "free" });
 d1(`UPDATE users SET email_verified_at='2026-11-12T00:00:00.000Z' WHERE email IN ('u24s-${ts}@example.com','u24a-${ts}@example.com')`);
 d1(`UPDATE users SET role='admin' WHERE email='u24a-${ts}@example.com'`);
 d1("DELETE FROM rate_limits");
@@ -85,7 +85,7 @@ check("admin on other's album /u/: no PayPal notice/link, back mini shown", a2.n
 await pa.screenshot({ path: ".qa-tmp/v23/ui24-admin-other-album.png", fullPage: true });
 // other logged user (non admin) + anon
 const other = client();
-await other.call("POST", "/api/auth/signup", { email: `u24o-${ts}@example.com`, password: pw, display_name: `U24 other ${tag}`, username: `oth_${tag}` });
+await other.call("POST", "/api/auth/signup", { email: `u24o-${ts}@example.com`, password: pw, display_name: `U24 other ${tag}`, username: `oth_${tag}`, plan: "free" });
 const pu = await pageAs(other);
 await go(pu, "#/carta/" + id); const u1 = await st(pu);
 check("other user on card: no PayPal notice/link", u1.notice === 0 && u1.accLink === 0, JSON.stringify(u1));

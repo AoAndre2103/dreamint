@@ -24,7 +24,7 @@ const check = (n, ok, info = "") => { out.push((ok ? "PASS " : "FAIL ") + n + (i
 d1("DELETE FROM rate_limits");
 const ts = Date.now(), tag = ts.toString(36).slice(-5);
 let nSign = 0;
-const signup = (c, n, extra = {}) => { if (!c.noReset) d1("DELETE FROM rate_limits"); c.email = `${n}-${ts}@example.com`; return c.call("POST", "/api/auth/signup", { email: c.email, password: pw, display_name: "Nome " + n, ...extra }); };
+const signup = (c, n, extra = {}) => { if (!c.noReset) d1("DELETE FROM rate_limits"); c.email = `${n}-${ts}@example.com`; return c.call("POST", "/api/auth/signup", { email: c.email, password: pw, display_name: "Nome " + n, plan: "free", ...extra }); };
 const userCount = (email) => d1(`SELECT COUNT(*) n FROM users WHERE email='${email}'`)[0].n;
 
 // --- signup

@@ -39,9 +39,9 @@ const check = (n, ok, info = "") => { out.push((ok ? "PASS " : "FAIL ") + n + (i
 const ts = Date.now(), tag = ts.toString(36).slice(-5);
 d1("DELETE FROM rate_limits");
 const admin = client(), owner = client(), other = client(), anon = client();
-await admin.call("POST", "/api/auth/signup", { email: `t22admin-${ts}@example.com`, password: pw, display_name: "Admin Test", username: `t22adm_${tag}` });
-await owner.call("POST", "/api/auth/signup", { email: `t22owner-${ts}@example.com`, password: pw, display_name: "Owner Test", username: `t22own_${tag}` });
-await other.call("POST", "/api/auth/signup", { email: `t22other-${ts}@example.com`, password: pw, display_name: "Other Test", username: `t22oth_${tag}` });
+await admin.call("POST", "/api/auth/signup", { email: `t22admin-${ts}@example.com`, password: pw, display_name: "Admin Test", username: `t22adm_${tag}`, plan: "free" });
+await owner.call("POST", "/api/auth/signup", { email: `t22owner-${ts}@example.com`, password: pw, display_name: "Owner Test", username: `t22own_${tag}`, plan: "free" });
+await other.call("POST", "/api/auth/signup", { email: `t22other-${ts}@example.com`, password: pw, display_name: "Other Test", username: `t22oth_${tag}`, plan: "free" });
 d1(`UPDATE users SET email_verified_at='2026-11-12T00:00:00.000Z' WHERE email LIKE 't22%-${ts}@example.com'`);
 d1(`UPDATE users SET role='admin' WHERE email='t22admin-${ts}@example.com'`);
 d1(`UPDATE users SET album_public=1 WHERE email='t22owner-${ts}@example.com'`);
