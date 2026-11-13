@@ -1,9 +1,9 @@
 // Local test v24: username mandatory at signup, needs_username flag, live availability check.
 import { execSync } from "child_process";
 const B = process.env.B || "http://localhost:8977";
-const QADB = process.env.QADB || "/workspace/tmp-qa/db";
+const QADB = process.env.QADB || ".qa-tmp/db";
 const pw = "Passw0rd-local-qa";
-const d1 = (sql) => JSON.parse(execSync(`cd /workspace/gemint-beta && WRANGLER_CACHE_DIR=/workspace/cf/.cache npx wrangler d1 execute gemint-beta --local --persist-to ${QADB} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
+const d1 = (sql) => JSON.parse(execSync(`cd . && npx wrangler d1 execute gemint-beta --local --persist-to ${QADB} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
 function client() {
   const c = { cookie: "" };
   c.call = async (method, path, body, headers = {}) => {

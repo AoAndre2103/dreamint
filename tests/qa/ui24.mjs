@@ -3,9 +3,9 @@ import fs from "fs";
 import { execSync } from "child_process";
 import pkg from "/usr/local/lib/pnpm/5/.pnpm/playwright@1.63.0-alpha-2026-08-31/node_modules/playwright/index.js";
 const { chromium } = pkg;
-const B = process.env.B || "http://localhost:8979", QADB = process.env.QADB || "/workspace/tmp-qa/db-v24", pw = "Passw0rd-local-qa";
-const fx = JSON.parse(fs.readFileSync("/workspace/tmp-qa/v23/suites/fixtures.json"));
-const d1 = (sql) => JSON.parse(execSync(`cd /workspace/gemint-beta && WRANGLER_CACHE_DIR=/workspace/cf/.cache npx wrangler d1 execute gemint-beta --local --persist-to ${QADB} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
+const B = process.env.B || "http://localhost:8979", QADB = process.env.QADB || ".qa-tmp/db-v24", pw = "Passw0rd-local-qa";
+const fx = JSON.parse(fs.readFileSync(".qa-tmp/v23/suites/fixtures.json"));
+const d1 = (sql) => JSON.parse(execSync(`cd . && npx wrangler d1 execute gemint-beta --local --persist-to ${QADB} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
 function client() {
   const c = { cookie: "" };
   c.call = async (method, path, body) => {
@@ -75,14 +75,14 @@ await go(po, "#/carta/" + id); const o1 = await st(po);
 check("owner card page: PayPal notice + link to own account", o1.notice === 1 && o1.accLink === 1, JSON.stringify(o1));
 await go(po, "#/collezione"); const o2 = await st(po);
 check("owner own album: PayPal notice shown, back mini shown", o2.notice >= 1 && o2.backMini >= 1, JSON.stringify(o2));
-await po.screenshot({ path: "/workspace/tmp-qa/v23/ui24-owner-album.png", fullPage: true });
+await po.screenshot({ path: ".qa-tmp/v23/ui24-owner-album.png", fullPage: true });
 // admin viewing another user's card/album
 const pa = await pageAs(admin);
 await go(pa, "#/carta/" + id); const a1 = await st(pa);
 check("admin on other's card: no PayPal notice/link, neutral note", a1.notice === 0 && a1.accLink === 0 && a1.neutral === 1, JSON.stringify(a1));
 await go(pa, "#/u/sell_" + tag); const a2 = await st(pa);
 check("admin on other's album /u/: no PayPal notice/link, back mini shown", a2.notice === 0 && a2.accLink === 0 && a2.backMini >= 1, JSON.stringify(a2));
-await pa.screenshot({ path: "/workspace/tmp-qa/v23/ui24-admin-other-album.png", fullPage: true });
+await pa.screenshot({ path: ".qa-tmp/v23/ui24-admin-other-album.png", fullPage: true });
 // other logged user (non admin) + anon
 const other = client();
 await other.call("POST", "/api/auth/signup", { email: `u24o-${ts}@example.com`, password: pw, display_name: `U24 other ${tag}`, username: `oth_${tag}` });
@@ -97,7 +97,7 @@ check("anon card page: no PayPal notice, flip with back photo", n1.notice === 0 
 await pn.focus("[data-raw-flip]"); await pn.keyboard.press("Enter"); await pn.waitForTimeout(700);
 const fl = await pn.evaluate(() => { const f = document.querySelector("[data-raw-flip]"); return { p: f.getAttribute("aria-pressed"), c: f.classList.contains("is-flipped"), hint: f.querySelector(".raw-flip-hint").textContent }; });
 check("flip by keyboard (Enter): aria-pressed true", fl.p === "true" && fl.c, JSON.stringify(fl));
-await pn.screenshot({ path: "/workspace/tmp-qa/v23/ui24-anon-card-back.png" });
+await pn.screenshot({ path: ".qa-tmp/v23/ui24-anon-card-back.png" });
 await pn.click("[data-raw-flip]"); await pn.waitForTimeout(300);
 check("flip by click toggles back to front", await pn.evaluate(() => document.querySelector("[data-raw-flip]").getAttribute("aria-pressed")) === "false");
 await go(pn, "#/u/sell_" + tag); const n2 = await st(pn);

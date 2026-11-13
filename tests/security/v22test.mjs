@@ -2,14 +2,14 @@
 import fs from "fs";
 import { execSync } from "child_process";
 const B = process.env.B || (process.env.B || "http://localhost:8977");
-const QADB = process.env.QADB || "/workspace/tmp-qa/db";
+const QADB = process.env.QADB || ".qa-tmp/db";
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures.json", import.meta.url)));
 const pw = "Passw0rd-local-qa";
 const d1 = (sql) => {
   let last;
   for (let i = 0; i < 4; i++) {
     try {
-      last = JSON.parse(execSync(`cd /workspace/gemint-beta && WRANGLER_CACHE_DIR=/workspace/cf/.cache npx wrangler d1 execute gemint-beta --local --persist-to ${QADB} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
+      last = JSON.parse(execSync(`cd . && npx wrangler d1 execute gemint-beta --local --persist-to ${QADB} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
       return last;
     } catch (e) { if (i === 3) throw e; execSync("sleep 0.4"); }
   }

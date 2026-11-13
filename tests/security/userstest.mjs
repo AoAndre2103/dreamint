@@ -4,7 +4,7 @@ import { execSync } from "child_process";
 const B = process.env.B || (process.env.B || "http://localhost:8977");
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures.json", import.meta.url)));
 const pw = "Passw0rd-local-qa";
-const d1 = (sql) => JSON.parse(execSync(`cd /workspace/gemint-beta && WRANGLER_CACHE_DIR=/workspace/cf/.cache npx wrangler d1 execute gemint-beta --local --persist-to ${process.env.QADB || "/workspace/tmp-qa/db"} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
+const d1 = (sql) => JSON.parse(execSync(`cd . && npx wrangler d1 execute gemint-beta --local --persist-to ${process.env.QADB || ".qa-tmp/db"} --json --command "${sql}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString())[0].results;
 function client() {
   const c = { cookie: "" };
   c.call = async (method, path, body, headers = {}) => {
@@ -12,7 +12,7 @@ function client() {
     const sc = r.headers.get("set-cookie"); if (sc) c.cookie = sc.split(";")[0];
     if (r.status === 201 && method === "POST" && path === "/api/cards/challenge") {
       const j0 = await r.clone().json();
-      await fetch(B + "/api/cards/challenge/" + j0.challenge_id + "/video", { method: "POST", headers: { "content-type": "video/mp4", origin: B, cookie: c.cookie }, body: fs.readFileSync("/workspace/gemint-beta/tests/fixtures-video/ok-h264.mp4") });
+      await fetch(B + "/api/cards/challenge/" + j0.challenge_id + "/video", { method: "POST", headers: { "content-type": "video/mp4", origin: B, cookie: c.cookie }, body: fs.readFileSync("./tests/fixtures-video/ok-h264.mp4") });
     }
     const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = t.slice(0, 80); }
     return { s: r.status, j, h: r.headers, t };

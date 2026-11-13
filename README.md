@@ -23,7 +23,7 @@ docs/screens/              # poche screenshot di riferimento (retri e funzioni v
 schema.sql                 # schema completo per un database locale nuovo (già con v2–v21)
 migrate-v2.sql … v21.sql   # migrazioni additive, da applicare in ordine sul D1 di produzione
 wrangler.toml              # progetto Pages, binding D1/KV e variabili pubbliche
-DEPLOY.sh                  # script di deploy usato in ambiente interno: non eseguirlo
+DEPLOY.sh                  # deploy portabile: backup codice+DB, test, migrazioni, deploy (solo con ok di Andrea)
                            # senza un ok esplicito; contiene percorsi della macchina di lavoro
 ```
 
@@ -80,7 +80,7 @@ node --test tests/*.mjs
 npx wrangler pages deploy public --project-name gemint-beta
 ```
 
-`DEPLOY.sh` automatizza backup, controlli, migrazioni v13–v21 e il deploy, ma è pensato per la macchina di lavoro interna (percorsi `/workspace`, confronto con un deployment di produzione atteso). Usalo solo se lo hai adattato e hai l’ok.
+`DEPLOY.sh` è portabile: funziona su qualsiasi macchina con node 18+, python3 e curl. Prima `npx wrangler login` (account Cloudflare con accesso a gemint-beta), poi dalla cartella del repo: `./DEPLOY.sh --dry-run` (backup codice + dump DB in ./backups, test, nessuna modifica) e `./DEPLOY.sh` (chiede conferma prima di migrazioni e deploy). Migrazioni v13–v26 con sonda: applicate solo se mancano. Le suite in tests/qa e tests/security vanno lanciate dalla cartella del repo (DB locale in ./.qa-tmp). Solo con l’ok di Andrea.
 
 ## Variabili e segreti
 

@@ -1,0 +1,7 @@
+{
+  "name": "dreamint",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test tests/*.mjs", "deploy": "./DEPLOY.sh" },
+  "devDependencies": { "wrangler": "^4" }
+}
