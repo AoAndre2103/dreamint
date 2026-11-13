@@ -13,6 +13,15 @@
   function langIsEn() {
     return window.DreamintI18n && window.DreamintI18n.getLang && window.DreamintI18n.getLang() === "en";
   }
+  // v25: commission text always comes from the plans in the config (no hard-coded rate).
+  function feeRangeText(cfg) {
+    var plans = (cfg && cfg.plans && cfg.plans.length) ? cfg.plans : [];
+    if (!plans.length) return "";
+    var bps = plans.map(function (p) { return Number(p.fee_bps) || 0; });
+    var fmt = function (b) { var s = (b / 100).toFixed(1).replace(/\.0$/, ""); return (langIsEn() ? s : s.replace(".", ",")) + "%"; };
+    var lo = Math.min.apply(null, bps), hi = Math.max.apply(null, bps);
+    return lo === hi ? fmt(lo) : fmt(lo) + "–" + fmt(hi);
+  }
   function italyShipNote() {
     return langIsEn() ? '<p class="ship-italy-note">' + tr("ship.italyOnly") + "</p>" : "";
   }
@@ -1451,7 +1460,7 @@
       return;
     }
     b.innerHTML = '<span class="offer-badge">' + tr("banner.badge") + "</span><span>" +
-      tr("banner.body", { days: (cfg.offerDays || 15), date: dateLabel, fee: (cfg.feeAfterPercent || 6.5) }) +
+      tr("banner.body", { days: (cfg.offerDays || 15), date: dateLabel, range: feeRangeText(cfg) }) +
       italyShipNote().replace("ship-italy-note", "ship-italy-note inline") +
       ' <a href="/legal/regolamento-lancio">' + tr("banner.rules") + "</a></span>";
     syncUserSearchChrome();
@@ -2016,11 +2025,11 @@
       ? '<div class="page-head"><div><h1>' + tr("market.ungraded.h") + "</h1><p>" + tr("market.ungraded.p") + "</p></div>" +
         '<a class="btn primary" href="#/registra/non-gradate" data-link>' + tr("market.sell") + "</a></div>" +
         conditionFilterRow(condFilter) +
-        '<p class="notes">' + tr("market.ungraded.notes", { date: dateLabel, fee: state.cfg.feeAfterPercent }) + italyShipNote() + "</p>"
+        '<p class="notes">' + tr("market.ungraded.notes", { date: dateLabel, range: feeRangeText(state.cfg) }) + italyShipNote() + "</p>"
       : '<div class="page-head"><div><h1>' + tr("market.graded.h") + "</h1><p>" +
         ((window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) ? tr("market.graded.pV9") : tr("market.graded.p")) + "</p></div>" +
         '<a class="btn primary" href="#/registra/gradate" data-link>' + tr("market.register") + "</a></div>" +
-        '<p class="notes">' + tr("market.graded.notes", { date: dateLabel, fee: state.cfg.feeAfterPercent }) + italyShipNote() + "</p>" +
+        '<p class="notes">' + tr("market.graded.notes", { date: dateLabel, range: feeRangeText(state.cfg) }) + italyShipNote() + "</p>" +
         rarityFilterRow(tierFilter) +
         ((window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) ? window.DreaMintTradeV9.certSearchCompact() + window.DreaMintTradeV9.offerFilterRow(window.DreaMintTradeV9.activeOffer()) : "");
     html += '<p class="row-actions"><a class="btn ghost" href="#/vendite" data-link>' + tr("market.sales") + "</a></p>";

@@ -7,7 +7,6 @@ CONTACT_EMAIL = "info@dreamint.it"
 LAUNCH_PUBLIC_DATE = ""
 LAUNCH_PUBLIC_DATE_LABEL = "Data di lancio pubblico: da annunciare"
 OFFER_DAYS = "15"
-FEE_AFTER_BPS = "250"
 FEE_OFFER_BPS = "0"
 # PayPal: no REST creds = WPS+_xclick+IPN (no P.IVA). Set PAYPAL_AUTO=off for manual only.
 # Secrets (optional REST): PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID

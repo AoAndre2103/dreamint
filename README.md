@@ -91,7 +91,7 @@ I **valori dei segreti non stanno in questo repository**. In produzione si impos
 - `CONTACT_EMAIL`
 - `LAUNCH_PUBLIC_DATE`, `LAUNCH_PUBLIC_DATE_LABEL`
 - `OFFER_DAYS` (giorni della promo di lancio, default 15)
-- `FEE_OFFER_BPS`, `FEE_AFTER_BPS` (commissioni in punti base; in beta restano a zero finché lo stato di lancio non è `MONETIZATION_ENABLED`)
+- `FEE_OFFER_BPS` (commissione durante l’offerta di lancio, in punti base). Le aliquote dei piani FREE/PRO/BUSINESS stanno in `functions/lib/plans.js` (unica fonte; `FEE_AFTER_BPS` non è più usata). In beta nessuna commissione finché lo stato di lancio non è `MONETIZATION_ENABLED`.
 - `PAYPAL_ENV` (`live` o `sandbox`)
 - `PAYPAL_AUTO` (`wps`, `off` / `manual`, oppure vuoto per usare REST se ci sono i segreti)
 - `PAYPAL_AUTOCOMPLETE_DAYS`

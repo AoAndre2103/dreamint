@@ -60,3 +60,9 @@ Nuova animazione di apertura delle carte gradate. Sui retri c’è il logo DM uf
 - Carte non gradate: retro visibile nell'album (miniatura) e nella pagina carta (flip al click/tasto Invio/Spazio); segnaposto pulito se il retro manca. Le foto restano soggette a album privato, carte test e rimozione admin.
 - Dati: richieste duplicate della carta di Naso archiviate (`archived_reason='duplicate_submission'`), username `prof.oak` e `naso` assegnati ai due admin (con audit_logs).
 - Nessuna migrazione nuova.
+
+## v25 — 2026-11-13 (deploy 6308b213)
+- Commissioni coerenti con i piani FREE (0 €/mese, 2,5%), PRO (9,90 €/mese, 2%), BUSINESS (29,90 €/mese, 1,5%): unica fonte `functions/lib/plans.js`; `feeAfterPercent` = aliquota FREE (non più `FEE_AFTER_BPS`).
+- Tolto il fallback fisso 6,5% del banner: il banner mostra «in beta nessuna commissione… poi piani FREE/PRO/BUSINESS (1,5%–2,5%)», calcolato dai piani.
+- Testi mercato (i18n.js) allineati a strings-v2: in beta nessuna commissione. `config.js` con gli stessi piani.
+- Test `tests/fees-consistency.test.mjs` (piani, config, niente 6,5%, pagine legali) e `tests/qa/ui25.mjs`.

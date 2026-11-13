@@ -48,6 +48,7 @@ import { normalizeUsername, normalizeQuery, likeEscape, USERNAME_RE } from "../l
 import { canSeeTest, testVisibleSql, isHiddenTest, isHiddenCard } from "../lib/visibility.js";
 import { validateChallengeVideo, videoResponse, VIDEO_MAX_BYTES, VIDEO_KV_PREFIX } from "../lib/challenge-video.js";
 import { sanitizeImageDataUrl, parseImageDataUrl, safeImageResponse, TEST_CARD_PNG_DATA_URL } from "../lib/image-safety.js";
+import { PLANS, freePlanPercent } from "../lib/plans.js";
 
 const COOKIE = "gemint_sid";
 
@@ -306,13 +307,10 @@ function publicConfig(env) {
     offerEndDateLabel: launchDate ? null : label,
     offerDays: Number(env.OFFER_DAYS || 15),
     feeOfferPercent: Number(env.FEE_OFFER_BPS || 0) / 100,
-    feeAfterPercent: Number(env.FEE_AFTER_BPS || 250) / 100,
+    // v25: no separate "after launch" rate any more: it is the FREE plan rate, from the single PLANS list.
+    feeAfterPercent: freePlanPercent(),
     // Future plans: NOT active during beta. Seller pays, % on item value (shipping excluded), no fixed fee, PayPal costs separate.
-    plans: [
-      { id: "free", label: "FREE", monthly_cents: 0, fee_bps: 250 },
-      { id: "pro", label: "PRO", monthly_cents: 990, fee_bps: 200 },
-      { id: "business", label: "BUSINESS", monthly_cents: 2990, fee_bps: 150 }
-    ],
+    plans: PLANS.map((p) => ({ ...p })),
     plansActive: false,
     sold_outside_archive: true,
     public_albums: true,
