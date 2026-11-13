@@ -46,7 +46,8 @@ d1(`INSERT INTO users (id, email, password_hash, password_salt, display_name, ro
 
 // ---------- 1. search ----------
 const sAnon = await anon.call("GET", `/api/users/search?q=naso`);
-check("anon search 'naso': no private album / no-username account", sAnon.s === 200 && !sAnon.j.users.some((u) => (u.album_ref || "").startsWith("~") || u.private) && !sAnon.j.admin_view, sAnon.s);
+// spec 06:34: private profiles ARE findable (flag private, no card count); no-username accounts never.
+check("anon search 'naso': no no-username account, private ones flagged without card count", sAnon.s === 200 && !sAnon.j.users.some((u) => (u.album_ref || "").startsWith("~") || !u.username || (u.private && u.cards_count != null)) && !sAnon.j.admin_view, sAnon.s);
 const sUser = await user.call("GET", `/api/users/search?q=${tag}`);
 const selU = (sUser.j.users || []).find((u) => u.username === seller.username);
 check("user search: private profile FOUND with private:true, no card count", sUser.s === 200 && selU && selU.private === true && selU.cards_count === null && !sUser.j.admin_view, JSON.stringify(sUser.j).slice(0, 160));

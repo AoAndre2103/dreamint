@@ -1,7 +1,7 @@
 // Local test v22: graded test cards (is_test=1) are visible only to admins.
 import fs from "fs";
 import { execSync } from "child_process";
-const B = process.env.B || "http://localhost:8977";
+const B = process.env.B || (process.env.B || "http://localhost:8977");
 const QADB = process.env.QADB || "/workspace/tmp-qa/db";
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures.json", import.meta.url)));
 const pw = "Passw0rd-local-qa";
