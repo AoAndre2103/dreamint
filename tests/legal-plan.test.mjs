@@ -64,8 +64,28 @@ test("profilo: il piano si può cambiare (form + chiamata me/plan) e gli admin v
   assert.ok(/plan_exempt/.test(app.slice(app.indexOf("function accountPlanHtml"), app.indexOf("function bindPlanForm"))));
 });
 
-test("index.html: versioni di app.js, strings e CSS aggiornate (niente cache vecchia)", () => {
+test("index.html: app.js, strings-v2.js e v2-theme.css hanno la stessa versione ?v= (niente cache vecchia)", () => {
   const html = read("public/index.html");
-  assert.ok(!/plan1/.test(html), "restano riferimenti a ?v=...plan1");
-  assert.ok(/app\.js\?v=20261113plan2/.test(html) && /strings-v2\.js\?v=20261113plan2/.test(html) && /v2-theme\.css\?v=20261113plan2/.test(html));
+  const v = (re) => (html.match(re) || [])[1];
+  const a = v(/app\.js\?v=(\w+)/), b = v(/strings-v2\.js\?v=(\w+)/), c = v(/v2-theme\.css\?v=(\w+)/);
+  assert.ok(a && b && c, "manca una versione ?v=");
+  assert.ok(a === b && b === c, "le tre versioni devono coincidere: " + [a, b, c].join(" / "));
+  assert.ok(!/plan1|plan2/.test(html), "restano versioni vecchie");
+});
+
+test("recensioni: Termini, FAQ e Privacy le spiegano (regole, 14 giorni, nessuna modifica)", () => {
+  for (const f of ["termini.html", "faq.html"]) {
+    const s = text("public/legal/" + f);
+    assert.ok(/recension/i.test(s), f + ": mancano le recensioni");
+    assert.ok(/60 giorni/.test(s) && /14 giorni/.test(s), f + ": mancano i termini di 60 e 14 giorni");
+    assert.ok(/non si (possono|può) modificare/i.test(s), f + ": deve dire che non si modificano");
+  }
+  assert.ok(/recensioni/.test(text("public/legal/privacy.html")) && /pubbliche/.test(text("public/legal/privacy.html")));
+});
+
+test("stringhe rev.*: stesse chiavi in italiano e inglese", () => {
+  const keys = [...read("public/js/strings-v2.js").matchAll(/"(rev\.[A-Za-z]+)":/g)].map((m) => m[1]);
+  const uniq = [...new Set(keys)];
+  assert.ok(uniq.length >= 17, "attese >= 17 chiavi rev.*, trovate " + uniq.length);
+  for (const k of uniq) assert.equal(keys.filter((x) => x === k).length, 2, k + " deve esistere in IT e in EN");
 });

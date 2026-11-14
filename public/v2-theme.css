@@ -303,3 +303,25 @@ html[data-theme="light"] .sale-thumb { background: #f3efe6; }
 .plan-choice .privacy-option.plan-recommended { border: 2px solid var(--mint); border-radius: 12px; }
 .pill.pill-recommended { background: var(--btn-primary-bg); color: var(--btn-primary-fg); }
 .plan-account { margin-top: 18px; }
+
+/* v27: recensioni */
+.stars { color: var(--mint); letter-spacing: 1px; }
+.review-form { display: grid; gap: 8px; margin-top: 10px; }
+.star-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.star-opt { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.review-summary { font-weight: 600; }
+.review-item { padding: 10px 0; border-top: 1px solid rgba(127, 127, 127, 0.25); }
+.review-item:first-of-type { border-top: 0; }
+.review-text { white-space: pre-wrap; margin: 4px 0; }
+.review-mine { margin-top: 10px; }
+
+/* v27b: scelta Pubblico/Privato e «Venduta fuori» sulla miniatura */
+.privacy-status { font-size: 16px; margin: 0 0 10px; }
+.privacy-choice { display: grid; gap: 8px; margin-bottom: 10px; }
+.tile-wrap { display: flex; flex-direction: column; gap: 8px; }
+.tile-wrap .tile-close { font-size: 13px; padding: 8px 10px; }
+
+/* v27c: finestra «Elimina annuncio» */
+.dm-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.6); overflow: auto; }
+.dm-modal-panel { display: grid; gap: 10px; width: 100%; max-width: 440px; max-height: 100%; overflow: auto; padding: 18px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--bg-2); color: var(--ink); }
+.dm-modal-panel h3 { margin: 0; }

@@ -49,6 +49,7 @@ import { canSeeTest, testVisibleSql, isHiddenTest, isHiddenCard } from "../lib/v
 import { validateChallengeVideo, videoResponse, VIDEO_MAX_BYTES, VIDEO_KV_PREFIX } from "../lib/challenge-video.js";
 import { sanitizeImageDataUrl, parseImageDataUrl, safeImageResponse, TEST_CARD_PNG_DATA_URL } from "../lib/image-safety.js";
 import { PLANS, freePlanPercent, normalizePlanId, isPlanExempt, needsPlanChoice } from "../lib/plans.js";
+import { createReview, listUserReviews, reviewStatusForSales, hideReview } from "../lib/reviews.js";
 
 const COOKIE = "gemint_sid";
 
@@ -216,6 +217,9 @@ async function route(request, env, path, url) {
   if (method === "GET" && path === "search/cert") return searchCert(request, env, url);
   const marketM = path.match(/^cards\/([^/]+)\/market$/);
   if (method === "PATCH" && marketM) return updateMarket(request, env, marketM[1]);
+  // v27: recensioni (pubbliche, solo lettura) di un utente
+  const userReviewsM = path.match(/^users\/([^/]+)\/reviews$/);
+  if (method === "GET" && userReviewsM) return userReviews(request, env, userReviewsM[1]);
   const userAlbumM = path.match(/^users\/([^/]+)\/album$/);
   if (method === "GET" && userAlbumM) return userAlbum(request, env, userAlbumM[1]);
 
@@ -251,10 +255,18 @@ async function route(request, env, path, url) {
   if (method === "PATCH" && listingOne) return updateListingPrice(request, env, listingOne[1]);
   const cardPrice = path.match(/^cards\/([^/]+)\/price$/);
   if (method === "PATCH" && cardPrice) return updateCardPrice(request, env, cardPrice[1]);
+  // v27c: il venditore elimina il proprio annuncio indicando un motivo
+  const closeM = path.match(/^listings\/([^/]+)\/close$/);
+  if (method === "POST" && closeM) return closeMyListing(request, env, closeM[1]);
   const buy = path.match(/^listings\/([^/]+)\/request$/);
   if (method === "POST" && buy) return requestBuy(request, env, buy[1]);
 
   if (method === "GET" && path === "sales") return mySales(request, env);
+  // v27: recensione a vendita completata (una a testa)
+  const saleReviewM = path.match(/^sales\/([^/]+)\/review$/);
+  if (method === "POST" && saleReviewM) return postSaleReview(request, env, saleReviewM[1]);
+  const adminReviewM = path.match(/^admin\/reviews\/([^/]+)$/);
+  if (method === "DELETE" && adminReviewM) return adminHideReview(request, env, adminReviewM[1]);
   const saleAct = path.match(/^sales\/([^/]+)\/(accept|ship|receive|cancel|mark-paid)$/);
   if (method === "POST" && saleAct) return saleAction(request, env, saleAct[1], saleAct[2]);
   if (method === "GET" && path.match(/^sales\/[^/]+\/paypal-link$/)) {
@@ -1617,6 +1629,13 @@ async function archiveCard(request, env, id) {
   if (!slab.is_ungraded) return json({ error: "Per una carta gradata usa il trasferimento con codice" }, 400);
   if (slab.archived_at) return json({ error: "Carta già archiviata" }, 409);
   const reason = String((body && body.reason) || "sold_outside").trim().slice(0, 40) || "sold_outside";
+  const res = await archiveUngradedSlab(env, user.id, id, reason);
+  if (!res.ok) return json({ error: "C’è un annuncio o una vendita in corso su questa carta: chiudili prima di archiviarla" }, 409);
+  return json({ ok: true, archived_at: res.at });
+}
+
+// Core condiviso: archivia una non gradata del proprietario solo se non ci sono annunci o vendite aperti.
+async function archiveUngradedSlab(env, userId, id, reason) {
   const at = nowIso();
   const open = "NOT EXISTS (SELECT 1 FROM listings WHERE slab_id = ? AND status IN ('active','reserved'))" +
     " AND NOT EXISTS (SELECT 1 FROM sales WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped'))";
@@ -1625,20 +1644,17 @@ async function archiveCard(request, env, id) {
     env.DB.prepare(
       `UPDATE slabs SET archived_at = ?, archived_reason = ?
        WHERE id = ? AND physical_owner_id = ? AND archived_at IS NULL AND ` + open
-    ).bind(at, reason, id, user.id, id, id),
+    ).bind(at, reason, id, userId, id, id),
     env.DB.prepare(
       `INSERT INTO slab_owner_history (id, slab_id, from_user_id, to_user_id, reason, sale_id, created_at)
        SELECT ?, ?, ?, NULL, 'sold_outside', NULL, ? WHERE ` + ok
-    ).bind(crypto.randomUUID(), id, user.id, at, id, at, user.id),
+    ).bind(crypto.randomUUID(), id, userId, at, id, at, userId),
     env.DB.prepare(
       `INSERT INTO audit_logs (id, actor_id, action, entity, entity_id, payload, created_at)
        SELECT ?, ?, 'archive_sold_outside', 'slab', ?, ?, ? WHERE ` + ok
-    ).bind(crypto.randomUUID(), user.id, id, JSON.stringify({ reason }), at, id, at, user.id)
+    ).bind(crypto.randomUUID(), userId, id, JSON.stringify({ reason }), at, id, at, userId)
   ]);
-  if (!res[0].meta || !res[0].meta.changes) {
-    return json({ error: "C’è un annuncio o una vendita in corso su questa carta: chiudili prima di archiviarla" }, 409);
-  }
-  return json({ ok: true, archived_at: at });
+  return { ok: !!(res[0].meta && res[0].meta.changes), at };
 }
 
 async function getCard(request, env, id) {
@@ -2020,11 +2036,13 @@ async function mySales(request, env) {
       }
     }
   }
+  const reviewState = await reviewStatusForSales(env.DB, (rows.results || []).filter((r) => r.status === "completed").map((r) => r.id), user.id, Date.now());
   const origin = new URL(request.url).origin;
   const mode = paypalMode(env);
   return json({
     sales: (rows.results || []).map((r) => {
       const sale = presentSale(r, user);
+      sale.review = reviewState[r.id] || null;
       const unpaid = canMarkPaid(r.status);
       sale.paypal_mode = mode;
       sale.paypal_checkout_url = (unpaid && r.seller_paypal_email && mode === "wps")
@@ -2042,6 +2060,35 @@ async function mySales(request, env) {
       return sale;
     })
   });
+}
+
+/* ---------------- v27: recensioni ---------------- */
+
+async function postSaleReview(request, env, saleId) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request).catch(() => null);
+  const res = await createReview(env.DB, { saleId, userId: user.id, body });
+  if (res.status === 201) await audit(env, user.id, "review.create", "sale", saleId, { rating: res.body.review.rating, reviewee_id: res.reviewee_id }).catch(() => {});
+  return json(res.body, res.status, { "cache-control": "no-store" });
+}
+
+async function userReviews(request, env, rawName) {
+  const notFound = () => json({ error: "Utente non trovato", code: "not_found" }, 404, { "cache-control": "no-store" });
+  let name;
+  try { name = decodeURIComponent(rawName).trim().toLowerCase(); } catch (e) { return notFound(); }
+  if (!USERNAME_RE.test(name)) return notFound();
+  const viewer = await getUser(request, env);
+  const u = await env.DB.prepare("SELECT id, username, is_test FROM users WHERE lower(username) = ? AND username IS NOT NULL").bind(name).first();
+  if (!u || (u.is_test && !(viewer && viewer.role === "admin"))) return notFound();
+  const data = await listUserReviews(env.DB, u.id);
+  return json({ username: u.username, summary: data.summary, reviews: data.reviews, can_moderate: !!(viewer && viewer.role === "admin") }, 200, { "cache-control": "no-store" });
+}
+
+async function adminHideReview(request, env, reviewId) {
+  const admin = await requireAdmin(request, env);
+  const res = await hideReview(env.DB, reviewId, admin.id);
+  if (res.status === 200) await audit(env, admin.id, "review.hide", "review", reviewId, {}).catch(() => {});
+  return json(res.body, res.status, { "cache-control": "no-store" });
 }
 
 async function saleAction(request, env, saleId, action) {
@@ -2406,6 +2453,49 @@ async function adminRemoveListing(request, env, listingId) {
     return json({ error: "Annuncio con pagamento confermato o già chiuso: gestisci prima la vendita", code: "listing_not_open" }, 409);
   }
   return json({ ok: true, listing_id: listingId, status: "cancelled", cancelled_requests: (res[2].meta && res[2].meta.changes) || 0 });
+}
+
+// v27c: il venditore elimina il PROPRIO annuncio scegliendo un motivo. Stessa logica sicura dell'admin
+// (solo active/paused, mai con pagamento confermato). «Venduta fuori»: una non gradata esce anche dall'album;
+// una gradata resta nell'album finché non viene trasferita con il codice (la proprietà digitale non cambia da sola).
+const LISTING_CLOSE_REASONS = Object.freeze(["sold_outside", "not_interested", "wrong_listing", "other"]);
+async function closeMyListing(request, env, listingId) {
+  const user = await requireUser(request, env);
+  const body = (await readJson(request).catch(() => null)) || {};
+  const reason = String(body.reason || "");
+  if (!LISTING_CLOSE_REASONS.includes(reason)) return json({ error: "Scegli un motivo", code: "invalid_reason" }, 400);
+  const note = reason === "other" ? cleanLine(body.note, 200) : "";
+  const l = await env.DB.prepare("SELECT id, slab_id, status, seller_id FROM listings WHERE id = ?").bind(listingId).first();
+  const slab = l ? await env.DB.prepare("SELECT id, is_test, is_ungraded, physical_owner_id FROM slabs WHERE id = ?").bind(l.slab_id).first() : null;
+  if (!l || !slab || isHiddenTest(slab, user) || l.seller_id !== user.id) return json({ error: "Annuncio non trovato", code: "not_found" }, 404);
+  if (!["active", "paused"].includes(l.status)) {
+    return json({ error: l.status === "reserved" ? "Annuncio con pagamento confermato: gestisci prima la vendita" : "Annuncio già chiuso", code: "listing_not_open" }, 409);
+  }
+  const at = nowIso();
+  const done = "EXISTS (SELECT 1 FROM audit_logs WHERE id = ?)";
+  const auditId = crypto.randomUUID();
+  const res = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE listings SET status = 'cancelled' WHERE id = ? AND seller_id = ? AND status IN ('active','paused')
+         AND NOT EXISTS (SELECT 1 FROM sales WHERE listing_id = ? AND ${OPEN_PAID_SALE_SQL})`
+    ).bind(listingId, user.id, listingId),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, actor_id, action, entity, entity_id, payload, created_at)
+       SELECT ?, ?, 'owner_close_listing', 'listing', ?, ?, ? WHERE changes() > 0`
+    ).bind(auditId, user.id, listingId, JSON.stringify({ slab_id: l.slab_id, previous_status: l.status, reason, note }), at),
+    env.DB.prepare(
+      "UPDATE sales SET status = 'cancelled' WHERE listing_id = ? AND status IN ('requested','accepted') AND " + done
+    ).bind(listingId, auditId),
+    refreshSlabStatusStmt(env, l.slab_id, done, [auditId])
+  ]);
+  if (!res[0].meta || !res[0].meta.changes) {
+    return json({ error: "Annuncio con pagamento confermato o già chiuso: gestisci prima la vendita", code: "listing_not_open" }, 409);
+  }
+  let archived = false;
+  if (reason === "sold_outside" && slab.is_ungraded && slab.physical_owner_id === user.id) {
+    archived = (await archiveUngradedSlab(env, user.id, l.slab_id, "sold_outside")).ok;
+  }
+  return json({ ok: true, listing_id: listingId, status: "cancelled", reason, archived, graded_sold_outside: reason === "sold_outside" && !slab.is_ungraded, cancelled_requests: (res[2].meta && res[2].meta.changes) || 0 });
 }
 
 async function adminRemoveCard(request, env, slabId) {

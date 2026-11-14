@@ -857,14 +857,22 @@
       '<p class="ok" id="username-ok" hidden></p>' +
       '<button type="submit" class="btn">' + esc(tr("account.usernameSave")) + "</button></form>";
   }
+  // v27b: scelta esplicita Pubblico / Privato (prima era una casella con l'etichetta dello stato, ambigua).
+  function privacyStatusHtml(on) {
+    return tr("album.stateNow", { state: "<strong>" + esc(tr(on ? "album.statePublic" : "album.statePrivate")) + "</strong>" });
+  }
+  function privacyOptionHtml(kind, selected) {
+    var K = kind === "public" ? "Public" : "Private";
+    return '<label class="privacy-option' + (selected ? " is-on" : "") + '"><input type="radio" name="album-visibility" value="' + kind + '"' + (selected ? " checked" : "") + "><span><strong>" +
+      esc(tr("album.opt" + K)) + '</strong> <span class="dim">— ' + esc(tr("album.opt" + K + "Hint")) + "</span></span></label>";
+  }
   function privacyToggleHtml() {
     if (!publicAlbumsOn() || !state.user) return "";
     var on = !!state.user.album_public;
     var hasUser = !!(state.user.username);
     return '<div class="privacy-toggle-wrap">' +
-      '<label class="privacy-toggle">' +
-      '<input type="checkbox" id="album-public-toggle"' + (on ? " checked" : "") + ">" +
-      '<span class="privacy-toggle-label">' + esc(tr(on ? "album.publicOn" : "album.publicOff")) + "</span></label>" +
+      '<p class="privacy-status" id="album-privacy-status" aria-live="polite">' + privacyStatusHtml(on) + "</p>" +
+      '<div class="privacy-choice" role="radiogroup" aria-label="' + esc(tr("account.privacyTitle")) + '">' + privacyOptionHtml("public", on) + privacyOptionHtml("private", !on) + "</div>" +
       '<p class="dim">' + esc(tr("album.privacyHint")) + "</p>" +
       (hasUser ? '<p class="privacy-current dim">@' + esc(state.user.username) + ' · <a href="#/u/' + encodeURIComponent(state.user.username) + '" data-link>' + esc(tr("album.viewPublic")) + "</a></p>" : "") +
       '<p class="error" id="album-privacy-err" hidden></p>' +
@@ -899,7 +907,77 @@
       raw: isRawCard(c)
     });
   }
+  // v27c: «Elimina annuncio» (con menu dei motivi) sulle miniature con annuncio attivo e nella pagina della carta.
+  var CLOSE_REASONS = ["sold_outside", "not_interested", "wrong_listing", "other"];
+  function closeListingBtnHtml(c, cls) {
+    return '<button type="button" class="btn ghost danger ' + (cls || "") + '" data-close-listing="' + esc(c.listing_id) + '" data-raw="' + (isRawCard(c) ? "1" : "0") + '">' + esc(tr("close.btn")) + "</button>";
+  }
+  function closeListingTileOk(c) {
+    return !!(c && c.id && c.listing_id && c.listing_status === "active");
+  }
   function albumCardTile(c, opts) {
+    var link = albumCardTileLink(c, opts);
+    if (!opts || opts.public || !opts.owner || !closeListingTileOk(c)) return link;
+    return '<div class="tile-wrap">' + link + closeListingBtnHtml(c, "tile-close") + "</div>";
+  }
+  function openCloseListingDialog(listingId, isRaw) {
+    var prev = document.activeElement;
+    var wrap = document.createElement("div");
+    wrap.className = "dm-modal";
+    wrap.innerHTML = '<form class="dm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="close-title" novalidate>' +
+      '<h3 id="close-title">' + esc(tr("close.title")) + "</h3><p>" + esc(tr("close.why")) + "</p>" +
+      '<div class="privacy-choice">' + CLOSE_REASONS.map(function (r) {
+        return '<label class="privacy-option"><input type="radio" name="reason" value="' + r + '"><span>' + esc(tr("close.r." + r)) + "</span></label>";
+      }).join("") + "</div>" +
+      '<p class="dim" id="close-hint" hidden></p>' +
+      '<label class="field" id="close-note-wrap" hidden>' + esc(tr("close.note")) + '<textarea name="note" maxlength="200" rows="2"></textarea></label>' +
+      '<p class="dim">' + esc(tr("close.warnRequests")) + "</p>" +
+      '<p class="error" id="close-err" hidden></p>' +
+      '<div class="row-actions"><button type="submit" class="btn danger">' + esc(tr("close.confirm")) + '</button><button type="button" class="btn ghost" data-close-cancel>' + esc(tr("close.cancel")) + "</button></div></form>";
+    document.body.appendChild(wrap);
+    var form = wrap.querySelector("form"), err = wrap.querySelector("#close-err"), hint = wrap.querySelector("#close-hint"), noteWrap = wrap.querySelector("#close-note-wrap");
+    function shut() {
+      document.removeEventListener("keydown", onKey);
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      if (prev && prev.focus) prev.focus();
+    }
+    function onKey(e) { if (e.key === "Escape") shut(); }
+    document.addEventListener("keydown", onKey);
+    wrap.addEventListener("click", function (e) { if (e.target === wrap) shut(); });
+    wrap.querySelector("[data-close-cancel]").onclick = shut;
+    form.querySelectorAll("input[name=reason]").forEach(function (r) {
+      r.addEventListener("change", function () {
+        err.hidden = true;
+        noteWrap.hidden = r.value !== "other";
+        var h = r.value === "sold_outside" ? tr(isRaw ? "close.hintSoldRaw" : "close.hintSoldGraded") : "";
+        hint.hidden = !h; hint.textContent = h;
+      });
+    });
+    var first = form.querySelector("input[name=reason]");
+    if (first) first.focus();
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var fd = new FormData(form), reason = fd.get("reason");
+      if (!reason) { err.hidden = false; err.textContent = tr("close.choose"); return; }
+      var btn = form.querySelector("button[type=submit]");
+      btn.disabled = true;
+      api("listings/" + encodeURIComponent(listingId) + "/close", { method: "POST", body: { reason: reason, note: String(fd.get("note") || "") } }).then(function (d) {
+        shut();
+        if (d && d.graded_sold_outside) alert(tr("close.doneGraded"));
+        else dmToast(tr(d && d.archived ? "close.doneArchived" : "close.done"));
+        render();
+      }).catch(function (e2) { btn.disabled = false; err.hidden = false; err.textContent = (e2 && e2.message) || tr("close.choose"); });
+    });
+  }
+  function bindCloseListingButtons(root) {
+    root.querySelectorAll("[data-close-listing]").forEach(function (btn) {
+      btn.onclick = function (ev) {
+        ev.preventDefault();
+        openCloseListingDialog(btn.getAttribute("data-close-listing"), btn.getAttribute("data-raw") === "1");
+      };
+    });
+  }
+  function albumCardTileLink(c, opts) {
     opts = opts || {};
     if (opts.public) c = normalizePublicCard(c);
     var raw = isRawCard(c);
@@ -986,29 +1064,40 @@
     });
   }
   function bindPrivacyToggle() {
-    var box = document.getElementById("album-public-toggle");
-    if (!box) return;
-    box.addEventListener("change", function () {
-      var er = document.getElementById("album-privacy-err");
-      var ok = document.getElementById("album-privacy-ok");
-      var label = box.parentNode && box.parentNode.querySelector(".privacy-toggle-label");
-      if (er) { er.hidden = true; er.textContent = ""; }
-      if (ok) ok.hidden = true;
-      if (box.checked && !(state.user && state.user.username)) {
-        box.checked = false;
-        if (er) { er.hidden = false; er.textContent = tr("user.usernameRequired"); }
-        var input = document.querySelector("#username-form input[name='username']");
-        if (input) { input.focus(); input.scrollIntoView({ block: "center" }); }
-        return;
-      }
-      var wantPublic = !!box.checked;
-      api("me", { method: "PATCH", body: { album_public: wantPublic } }).then(function (d) {
-        state.user = d.user || Object.assign({}, state.user, { album_public: wantPublic });
-        if (label) label.textContent = tr(wantPublic ? "album.publicOn" : "album.publicOff");
-        if (ok) { ok.hidden = false; ok.textContent = tr(wantPublic ? "album.madePublic" : "album.madePrivate"); }
-      }).catch(function (err) {
-        box.checked = !wantPublic;
-        if (er) { er.hidden = false; er.textContent = usernameErrorMessage(err); }
+    var radios = document.querySelectorAll("input[name='album-visibility']");
+    if (!radios.length) return;
+    function paint(on) {
+      radios.forEach(function (r) {
+        r.checked = (r.value === "public") === on;
+        if (r.parentNode) r.parentNode.classList.toggle("is-on", r.checked);
+      });
+      var st = document.getElementById("album-privacy-status");
+      if (st) st.innerHTML = privacyStatusHtml(on);
+    }
+    radios.forEach(function (box) {
+      box.addEventListener("change", function () {
+        var er = document.getElementById("album-privacy-err");
+        var ok = document.getElementById("album-privacy-ok");
+        var was = !!(state.user && state.user.album_public);
+        var wantPublic = box.value === "public";
+        if (er) { er.hidden = true; er.textContent = ""; }
+        if (ok) ok.hidden = true;
+        if (wantPublic === was) { paint(was); return; }
+        if (wantPublic && !(state.user && state.user.username)) {
+          paint(was);
+          if (er) { er.hidden = false; er.textContent = tr("user.usernameRequired"); }
+          var input = document.querySelector("#username-form input[name='username']");
+          if (input) { input.focus(); input.scrollIntoView({ block: "center" }); }
+          return;
+        }
+        paint(wantPublic);
+        api("me", { method: "PATCH", body: { album_public: wantPublic } }).then(function (d) {
+          state.user = d.user || Object.assign({}, state.user, { album_public: wantPublic });
+          if (ok) { ok.hidden = false; ok.textContent = tr(wantPublic ? "album.madePublic" : "album.madePrivate"); }
+        }).catch(function (err) {
+          paint(was);
+          if (er) { er.hidden = false; er.textContent = usernameErrorMessage(err); }
+        });
       });
     });
   }
@@ -1892,6 +1981,9 @@
         '<p class="error" id="price-err" hidden></p><p class="ok" id="price-ok" hidden></p>' +
         '<button class="btn" type="submit">' + tr("card.updatePrice") + "</button></form>";
     }
+    if (c.can_edit_price && c.listing_id && c.listing_status === "active") {
+      html += '<p class="row-actions">' + closeListingBtnHtml(c) + "</p>";
+    }
     if (isOwnCard(c) && (needsPaypalToSell(c) || c.listing_blocked_reason === "no_paypal")) {
       html += paypalNeededHtml();
     } else if (!isOwnCard(c) && c.listing_blocked_reason === "no_paypal") {
@@ -2366,6 +2458,75 @@
     }
     return trx("sale." + s, s);
   }
+  // v27: recensioni (voto 1-5 + commento) tra venditore e acquirente
+  function starsHtml(n) {
+    var s = "";
+    for (var i = 1; i <= 5; i++) s += i <= n ? "★" : "☆";
+    return '<span class="stars" aria-label="' + n + '/5">' + s + "</span>";
+  }
+  function saleReviewHtml(s) {
+    var r = s.review;
+    if (s.status !== "completed" || !r) return "";
+    if (r.mine) {
+      return '<div class="review-mine"><b>' + esc(tr("rev.mine")) + "</b> " + starsHtml(r.mine.rating) +
+        (r.mine.comment ? '<p class="muted">' + esc(r.mine.comment) + "</p>" : "") + '<p class="dim">' + esc(tr("rev.visibility")) + "</p></div>";
+    }
+    if (!r.can_review) return "";
+    var opts = "";
+    for (var i = 5; i >= 1; i--) opts += '<label class="star-opt"><input type="radio" name="rating" value="' + i + '" required><span>' + i + " ★</span></label>";
+    return '<form class="review-form" data-sale="' + esc(s.id) + '" novalidate><b>' + esc(tr("rev.leave")) + '</b><div class="star-pick">' + opts + "</div>" +
+      '<label class="field">' + esc(tr("rev.comment")) + '<textarea name="comment" maxlength="500" rows="3"></textarea></label>' +
+      '<p class="dim">' + esc(tr("rev.hint")) + '</p><p class="error" hidden></p><button class="btn primary" type="submit">' + esc(tr("rev.send")) + "</button></form>";
+  }
+  function bindReviewForms(root) {
+    root.querySelectorAll(".review-form").forEach(function (f) {
+      f.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var err = f.querySelector(".error"), btn = f.querySelector("button[type=submit]");
+        err.hidden = true;
+        var fd = new FormData(f), rating = fd.get("rating");
+        if (!rating) { err.hidden = false; err.textContent = tr("rev.rateRequired"); return; }
+        btn.disabled = true;
+        api("sales/" + f.getAttribute("data-sale") + "/review", { method: "POST", body: { rating: Number(rating), comment: String(fd.get("comment") || "") } })
+          .then(function () { render(); })
+          .catch(function (e2) { btn.disabled = false; err.hidden = false; err.textContent = (e2 && e2.message) || tr("rev.rateRequired"); });
+      });
+    });
+  }
+  function reviewsPanelHtml(d, own) {
+    var sm = d.summary || { count: 0 };
+    var head;
+    if (!sm.count) head = '<p class="muted">' + esc(tr("rev.none")) + "</p>";
+    else {
+      var fmt = function (x) { return String(x).replace(".", ","); };
+      head = '<p class="review-summary">' + starsHtml(Math.round(sm.avg)) + " " + esc(tr("rev.avg", { avg: fmt(sm.avg), n: sm.count })) + "</p>" +
+        '<p class="dim">' + [
+          sm.as_seller && sm.as_seller.count ? tr("rev.asSeller", { avg: fmt(sm.as_seller.avg), n: sm.as_seller.count }) : "",
+          sm.as_buyer && sm.as_buyer.count ? tr("rev.asBuyer", { avg: fmt(sm.as_buyer.avg), n: sm.as_buyer.count }) : ""
+        ].filter(Boolean).map(esc).join(" · ") + "</p>";
+    }
+    var items = (d.reviews || []).map(function (r) {
+      var role = r.reviewee_role === "seller" ? tr("rev.roleSeller") : tr("rev.roleBuyer");
+      return '<div class="review-item"><div>' + starsHtml(r.rating) + ' <span class="dim">' + esc(role) + " · @" + esc(r.reviewer_username) + " · " + esc(String(r.created_at || "").slice(0, 10)) + "</span></div>" +
+        (r.comment ? '<p class="review-text">' + esc(r.comment) + "</p>" : "") +
+        (d.can_moderate ? '<button class="btn ghost danger" type="button" data-review-hide="' + esc(r.id) + '">' + esc(tr("rev.hide")) + "</button>" : "") + "</div>";
+    }).join("");
+    return '<section class="panel reviews"><h2>' + esc(own ? tr("rev.mineTitle") : tr("rev.title")) + "</h2>" + head + items + "</section>";
+  }
+  function loadReviewsInto(username, box, own) {
+    api("users/" + encodeURIComponent(username) + "/reviews").then(function (d) {
+      box.innerHTML = reviewsPanelHtml(d, own);
+      box.querySelectorAll("[data-review-hide]").forEach(function (b) {
+        b.onclick = function () {
+          if (!window.confirm(tr("rev.hideConfirm"))) return;
+          api("admin/reviews/" + b.getAttribute("data-review-hide"), { method: "DELETE" })
+            .then(function () { loadReviewsInto(username, box, own); })
+            .catch(function (err) { alert(err.message); });
+        };
+      });
+    }).catch(function () { box.innerHTML = ""; });
+  }
+
   function pageSales(sales) {
     if (!sales.length) return '<section class="panel"><h2>' + tr("sales.title") + '</h2><p class="muted">' + tr("sales.empty") + "</p></section>";
     var mode = (state.cfg.paypal && state.cfg.paypal.mode) || "wps";
@@ -2416,6 +2577,7 @@
         actions += '<button class="btn primary" data-act="receive" data-id="' + s.id + '">' + tr("sales.received") + "</button> ";
         actions += '<p class="dim">' + tr("sales.autoComplete", { days: ((state.cfg.paypal && state.cfg.paypal.autoCompleteDays) || 14) }) + "</p>";
       }
+      actions += saleReviewHtml(s);
       return '<div class="list-item"><div></div><div><b>' + esc(s.card_name) + "</b><div class=\"dim\">" + role + " · " + esc(saleStatusLabel(s)) + " · " + saleBreakdown(s) + "</div>" +
         (s.shipping_label ? "<div class=\"dim\">" + tr("sales.shipLine", { label: esc(s.shipping_label) }) + (s.insurance ? " · " + tr("sales.insured") : "") + "</div>" : "") +
         "<div class=\"dim\">" + tr("sales.fromTo", { seller: esc(s.seller_name), buyer: esc(s.buyer_name) }) + (s.contact ? " · " + tr("sales.contact", { contact: esc(s.contact) }) : "") + "</div>" +
@@ -3278,6 +3440,11 @@
         bindUsernameForm();
         bindPrivacyToggle();
         bindPlanForm();
+        if (state.user && state.user.username) {
+          var myRvBox = document.createElement("div");
+          $app.appendChild(myRvBox);
+          loadReviewsInto(state.user.username, myRvBox, true);
+        }
         return;
       }
       if (p[0] === "registra") {
@@ -3310,6 +3477,9 @@
           var pub = await api("users/" + encodeURIComponent(uname) + "/album");
           $app.innerHTML = pagePublicProfile(pub, null, pubTab);
           bindPublicProfile();
+          var rvBox = document.createElement("div");
+          $app.appendChild(rvBox);
+          loadReviewsInto(uname, rvBox, false);
         } catch (pubErr) {
           $app.innerHTML = pagePublicProfile(null, pubErr, pubTab);
         }
@@ -3323,6 +3493,7 @@
         // reveal-v2 hook: cornice rarità + retro sigillato nelle tile (logica in /js/reveal-v2.js)
         if (window.DreamintRevealV2) window.DreamintRevealV2.enhanceGrid(mine.cards || [], state.user);
         bindAlbumTabs();
+        bindCloseListingButtons($app);
         bindUsernameForm();
         bindPrivacyToggle();
         return;
@@ -3356,6 +3527,7 @@
               alert(msg);
             });
         };
+        bindCloseListingButtons($app);
         var so = document.getElementById("sold-outside");
         if (so) so.onclick = function () {
           var er = document.getElementById("sold-outside-err");
@@ -3485,6 +3657,7 @@
         if (!state.user) { $app.innerHTML = pageAuth("login"); bindAuth("login"); return; }
         var sls = await api("sales");
         $app.innerHTML = pageSales(sls.sales || []);
+        bindReviewForms($app);
         $app.querySelectorAll("[data-act]").forEach(function (btn) {
           btn.onclick = function () {
             api("sales/" + btn.getAttribute("data-id") + "/" + btn.getAttribute("data-act"), { body: {} })

@@ -60,6 +60,7 @@ probe() { case $1 in
   migrate-v22.sql) echo "SELECT COUNT(*) n FROM pragma_table_info('slabs') WHERE name='submit_fingerprint'";;
   migrate-v23.sql) echo "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='support_requests'";;
   migrate-v26.sql) echo "SELECT COUNT(*) n FROM pragma_table_info('users') WHERE name='plan'";;
+  migrate-v27.sql) echo "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='reviews'";;
   *) echo "";; esac; }
 MIGS=$(ls migrate-v1[3-9].sql migrate-v2[0-9].sql 2>/dev/null | sort -V)
 confirm "Applicare le migrazioni mancanti sul DB di produzione?" || { echo "annullato"; exit 1; }
