@@ -661,12 +661,16 @@
     }
     // 3D viewer shared by real openings and demo: presentation only, no server writes.
     var viewerYaw = 180, viewerPitch = 0, drag = null;
+    // Drag tilts the visible side only. Turning over requires the dedicated button.
+    var viewerSide = 180;
+    function clampViewerYaw(yaw) { return Math.max(viewerSide - 65, Math.min(viewerSide + 65, yaw)); }
     function paintViewer() {
       flipper.style.transform = "rotateX(" + viewerPitch.toFixed(1) + "deg) rotateY(" + viewerYaw.toFixed(1) + "deg)";
     }
     function turnViewer() {
       if (phase !== "done") return;
-      viewerYaw = Math.round(viewerYaw / 180) * 180 + 180;
+      viewerSide = viewerSide === 180 ? 0 : 180;
+      viewerYaw = viewerSide;
       viewerPitch = 0;
       paintViewer();
     }
@@ -678,13 +682,13 @@
     });
     card.addEventListener("pointermove", function (e) {
       if (!drag || e.pointerId !== drag.id || phase !== "done") return;
-      viewerYaw = drag.yaw + (e.clientX - drag.x) * 0.8;
+      viewerYaw = clampViewerYaw(drag.yaw + (e.clientX - drag.x) * 0.45);
       viewerPitch = Math.max(-45, Math.min(45, drag.pitch - (e.clientY - drag.y) * 0.35));
       paintViewer();
       // Move the tier-coloured foil with the user's viewing angle, on both demo and real cards.
       var holo = front.querySelector(".rv2-holo");
       var glare = front.querySelector(".rv2-glare");
-      var dx = Math.max(-35, Math.min(35, viewerYaw - 180));
+      var dx = Math.max(-35, Math.min(35, viewerYaw - viewerSide));
       var dy = Math.max(-35, Math.min(35, viewerPitch));
       if (holo) { holo.style.setProperty("--rv2-hx", (dx * 0.9).toFixed(1) + "px"); holo.style.setProperty("--rv2-hy", (dy * 0.9).toFixed(1) + "px"); }
       if (glare) { glare.style.setProperty("--rv2-gx", (dx * 1.4).toFixed(1) + "px"); glare.style.setProperty("--rv2-gy", (dy * 1.4).toFixed(1) + "px"); }
@@ -697,12 +701,15 @@
     card.addEventListener("pointercancel", endDrag);
     card.addEventListener("keydown", function (e) {
       if (phase !== "done") return;
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") { viewerYaw += e.key === "ArrowLeft" ? -20 : 20; paintViewer(); e.preventDefault(); }
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") { viewerYaw = clampViewerYaw(viewerYaw + (e.key === "ArrowLeft" ? -20 : 20)); paintViewer(); e.preventDefault(); }
       if (e.key === "ArrowUp" || e.key === "ArrowDown") { viewerPitch = Math.max(-45, Math.min(45, viewerPitch + (e.key === "ArrowUp" ? 10 : -10))); paintViewer(); e.preventDefault(); }
     });
     function done() {
       phase = "done";
-      viewerYaw = 180; viewerPitch = 0; paintViewer();
+      viewerSide = 180; viewerYaw = 180; viewerPitch = 0;
+      // The reveal flip animation must not override the interactive transform.
+      if (flipper.getAnimations) flipper.getAnimations().forEach(function (a) { a.cancel(); });
+      paintViewer();
       card.classList.add("rv2-viewable");
       card.setAttribute("aria-label", doc.documentElement.lang === "en" ? "Rotate the card with mouse, touch or arrow keys" : "Ruota la carta con mouse, dito o frecce");
       var tn = q(".rv2-tiername"); tn.textContent = tierLabel(D.tier); tn.classList.add("on");
