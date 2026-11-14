@@ -996,8 +996,8 @@
       (raw ? '<span class="pill pill-raw">' + tr("pill.ungraded") + "</span>" : "") +
       (c.rarity_tier ? rarityPillsHtml(c.rarity_tier) : "") +
       (opts.owner && c.full_set === "yes" ? '<span class="pill pill-leggendaria">' + tr("pill.fullSet") + "</span>" : opts.owner && c.full_set === "transferring" ? '<span class="pill warn">' + tr("pill.fullSetTransfer") + "</span>" : "") +
-      (listed && price != null ? "<span>" + euros(price) + "</span>" : "") +
       "</div>" +
+      (listed && price != null ? '<div class="tile-price-block"><span class="tile-price-label">Prezzo richiesto</span><strong class="tile-price-value">' + esc(euros(price)) + '</strong></div>' : "") +
       (opts.owner && !opts.public && (isOwnCard(c) || !c.physical_owner_id) && (c.listing_blocked_reason === "no_paypal" || needsPaypalToSell(c)) ? '<div class="tile-paypal">' + paypalNeededHtml() + "</div>" : "") +
       (opts.owner && c.listing_blocked_reason === "no_price" ? '<p class="dim tile-noprice">' + esc(tr("card.noPrice")) + "</p>" : "") +
       "</div></a>";
@@ -2433,6 +2433,7 @@
       (slab.rarity_tier ? '<p class="row-actions"><button type="button" class="btn ghost" id="share-rarity">' + tr("card.share") + "</button></p>" : "") +
       "</div>") +
       '<p class="price">' + euros(listing.price_cents) + "</p>" +
+      (!listing.is_test && !slab.is_test ? '<p class="muted"><a href="/annuncio/' + encodeURIComponent(listing.id) + '" target="_blank" rel="noopener">Link pubblico e condivisibile dell’annuncio</a></p>' : '') +
       priceTrendSlot({ slab_id: slab.id }, false) +
       ((listing.cardmarket_avg_cents || slab.cardmarket_avg_cents)
         ? '<p class="ref-price">' + esc(cardmarketLabel(listing.cardmarket_avg_cents || slab.cardmarket_avg_cents, true)) + "</p>"
