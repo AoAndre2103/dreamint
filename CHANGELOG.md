@@ -1,3 +1,11 @@
+## v28 — Trasferimenti esterni non gradate e contestazioni
+- Codice di trasferimento monouso di 36 caratteri esadecimali, memorizzato solo come SHA-256, valido 15 minuti; non permanente nell’album.
+- Destinatario autenticato riscatta il codice; il venditore approva dopo la consegna fisica. Registro proprietà e audit; email informative a entrambe le parti.
+- Blocco per carte test, archiviate, con annunci o vendite aperti. Le vendite esterne non sono verificate da DreaMint.
+- Acquirente può aprire una contestazione durante la spedizione; completamento manuale e automatico sospesi finché un amministratore non la risolve.
+- Migrazione D1: migrate-v28.sql (necessaria prima del deploy).
+- Verifica sintattica e test automatici eseguiti; test end-to-end con D1 reale e due account ancora da effettuare.
+
 # Changelog
 
 Storia ricavata dal codice, dalle migrazioni e dal lavoro recente sul frontend. Le versioni del server (v13–v21) coincidono con i file `migrate-vN.sql`. Il frontend in questo albero è la v9b, con estrazione reveal-v2 revisione rv3.

@@ -19,6 +19,7 @@ export const IP_RULES = [
   { name: "verifylink", test: (m, p) => m === "GET" && p === "auth/verify-email", limit: 60, windowSec: HOUR },
   { name: "challenge", test: (m, p) => m === "POST" && p === "cards/challenge", limit: 60, windowSec: HOUR },
   { name: "challengevideo", test: (m, p) => m === "POST" && /^cards\/challenge\/[^/]+\/video$/.test(p), limit: 20, windowSec: HOUR },
+  { name: "raw-transfer", test: (m, p) => m === "POST" && (p === "external-transfers/redeem" || /^cards\/[^/]+\/external-transfer\/(create|approve|cancel)$/.test(p)), limit: 15, windowSec: HOUR },
   { name: "archive", test: (m, p) => m === "POST" && /^cards\/[^/]+\/archive$/.test(p), limit: 30, windowSec: HOUR },
   { name: "usernamecheck", test: (m, p) => m === "GET" && p === "users/username-available", limit: 60, windowSec: MIN },
   { name: "usersearch", test: (m, p) => m === "GET" && p === "users/search", limit: 30, windowSec: MIN },

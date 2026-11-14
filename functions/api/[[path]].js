@@ -233,6 +233,11 @@ async function route(request, env, path, url) {
   const cardOpen = path.match(/^cards\/([^/]+)\/open$/);
   if (method === "POST" && cardOpen) return openCard(request, env, cardOpen[1]);
 
+  // External transfer of ungraded cards: short-lived invitation, recipient acceptance, owner approval.
+  const rawTransfer = path.match(/^cards\/([^/]+)\/external-transfer\/(create|status|approve|cancel)$/);
+  if (rawTransfer && ((method === "GET" && rawTransfer[2] === "status") || method === "POST"))
+    return rawTransferAction(request, env, rawTransfer[1], rawTransfer[2]);
+  if (method === "POST" && path === "external-transfers/redeem") return redeemRawTransfer(request, env);
   const cardArchive = path.match(/^cards\/([^/]+)\/archive$/);
   if (method === "POST" && cardArchive) return archiveCard(request, env, cardArchive[1]);
 
@@ -261,6 +266,10 @@ async function route(request, env, path, url) {
   const buy = path.match(/^listings\/([^/]+)\/request$/);
   if (method === "POST" && buy) return requestBuy(request, env, buy[1]);
 
+  const disputeM = path.match(/^sales\/([^/]+)\/dispute$/);
+  if (method === "POST" && disputeM) return reportSaleDispute(request, env, disputeM[1]);
+  const resolveDisputeM = path.match(/^admin\/sales\/([^/]+)\/resolve-dispute$/);
+  if (method === "POST" && resolveDisputeM) return resolveSaleDispute(request, env, resolveDisputeM[1]);
   if (method === "GET" && path === "sales") return mySales(request, env);
   // v27: recensione a vendita completata (una a testa)
   const saleReviewM = path.match(/^sales\/([^/]+)\/review$/);
@@ -1619,6 +1628,88 @@ async function myCards(request, env) {
   return json({ cards: list.map((s) => presentSlab(s, user, true)) });
 }
 
+// An external transfer is a registry change, not a verified DreaMint sale or payment.
+// Codes are never stored in plaintext and are revealed only at creation.
+const RAW_TRANSFER_TTL = 15 * 60 * 1000;
+const RAW_OPEN_SALES = "NOT EXISTS (SELECT 1 FROM sales WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped'))";
+const RAW_OPEN_LISTINGS = "NOT EXISTS (SELECT 1 FROM listings WHERE slab_id = ? AND status IN ('active','reserved'))";
+function rawCode() {
+  const a = new Uint8Array(18); crypto.getRandomValues(a);
+  return Array.from(a, x => x.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+async function rawHash(code) {
+  const bytes = new TextEncoder().encode(code);
+  const h = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(h), x => x.toString(16).padStart(2, "0")).join("");
+}
+async function rawTransferAction(request, env, id, action) {
+  const user = await requireUser(request, env);
+  const card = await env.DB.prepare("SELECT id, physical_owner_id, is_ungraded, archived_at, is_test FROM slabs WHERE id = ?").bind(id).first();
+  if (!card || card.physical_owner_id !== user.id || !card.is_ungraded || card.archived_at || card.is_test)
+    return json({ error: "Carta non disponibile per il trasferimento" }, 404);
+  const row = await env.DB.prepare("SELECT * FROM raw_external_transfers WHERE slab_id = ? AND status IN ('pending','claimed') ORDER BY created_at DESC LIMIT 1").bind(id).first();
+  if (action === "status") return json({ transfer: row ? { id: row.id, status: row.status, expires_at: row.expires_at, recipient_id: row.recipient_id } : null });
+  if (action === "cancel") {
+    const r = await env.DB.prepare("UPDATE raw_external_transfers SET status = 'cancelled' WHERE slab_id = ? AND sender_id = ? AND status IN ('pending','claimed')").bind(id, user.id).run();
+    return json({ ok: true, cancelled: r.meta.changes });
+  }
+  if (action === "create") {
+    if (row && row.status === 'claimed' && Date.parse(row.expires_at) > Date.now()) return json({ error: "Una richiesta è già in attesa di approvazione" }, 409);
+    const code = rawCode(), hash = await rawHash(code), at = nowIso(), expiry = new Date(Date.now()+RAW_TRANSFER_TTL).toISOString();
+    const r = await env.DB.batch([
+      env.DB.prepare("UPDATE raw_external_transfers SET status = 'cancelled' WHERE slab_id = ? AND status IN ('pending','claimed')").bind(id),
+      env.DB.prepare(`INSERT INTO raw_external_transfers (id, slab_id, sender_id, code_hash, status, created_at, expires_at)
+        SELECT ?, ?, ?, ?, 'pending', ?, ? WHERE EXISTS (SELECT 1 FROM slabs WHERE id = ? AND physical_owner_id = ? AND is_ungraded = 1 AND archived_at IS NULL AND COALESCE(is_test,0)=0)
+        AND ${RAW_OPEN_LISTINGS} AND ${RAW_OPEN_SALES}`)
+        .bind(crypto.randomUUID(), id, user.id, hash, at, expiry, id, user.id, id, id)
+    ]);
+    if (!r[1].meta.changes) return json({ error: "Carta in vendita o trasferimento non consentito" }, 409);
+    return json({ ok: true, code, expires_at: expiry });
+  }
+  if (action === "approve") {
+    if (!row || row.status !== 'claimed' || !row.recipient_id || Date.parse(row.expires_at) <= Date.now()) return json({ error: "Nessuna richiesta valida da approvare" }, 409);
+    const at = nowIso();
+    const guard = `EXISTS (SELECT 1 FROM raw_external_transfers WHERE id = ? AND status = 'completed' AND completed_at = ?)`;
+    const res = await env.DB.batch([
+      env.DB.prepare(`UPDATE raw_external_transfers SET status='completed', completed_at=? WHERE id=? AND sender_id=? AND status='claimed' AND expires_at > ? AND recipient_id IS NOT NULL AND ${RAW_OPEN_LISTINGS} AND ${RAW_OPEN_SALES}`)
+        .bind(at,row.id,user.id,at,id,id),
+      env.DB.prepare(`UPDATE slabs SET physical_owner_id=?, digital_owner_id=?, asking_price_cents=NULL WHERE id=? AND physical_owner_id=? AND is_ungraded=1 AND archived_at IS NULL AND ${guard}`)
+        .bind(row.recipient_id,row.recipient_id,id,user.id,row.id,at),
+      env.DB.prepare(`INSERT INTO slab_owner_history (id,slab_id,from_user_id,to_user_id,reason,sale_id,created_at)
+        SELECT ?,?,?,?,'external_unverified',NULL,? WHERE ${guard} AND EXISTS (SELECT 1 FROM slabs WHERE id=? AND physical_owner_id=?)`)
+        .bind(crypto.randomUUID(),id,user.id,row.recipient_id,at,row.id,at,id,row.recipient_id),
+      env.DB.prepare(`INSERT INTO audit_logs (id,actor_id,action,entity,entity_id,payload,created_at)
+        SELECT ?,?,'raw_external_transfer','slab',?,?,? WHERE ${guard}`)
+        .bind(crypto.randomUUID(),user.id,id,JSON.stringify({ recipient_id: row.recipient_id, verified_sale: false }),at,row.id,at)
+    ]);
+    if (!res[0].meta.changes || !res[1].meta.changes) return json({ error: "Trasferimento non completato: verifica la carta e le vendite aperte" }, 409);
+    try {
+      const emails = await env.DB.prepare("SELECT id,email FROM users WHERE id IN (?,?)").bind(user.id,row.recipient_id).all();
+      for (const u of emails.results || []) if (u.email) await sendNotifyEmail(env, {
+        to: u.email, subject: 'DreaMint: trasferimento esterno registrato',
+        text: 'La registrazione della carta ' + id + ' è stata trasferita all’account destinatario. Questa operazione non certifica una compravendita o un pagamento su DreaMint.'
+      });
+    } catch (_) { /* Email failure must not undo completed ownership transfer. */ }
+    return json({ ok: true, transferred: true });
+  }
+  return json({ error: "Operazione sconosciuta" }, 400);
+}
+async function redeemRawTransfer(request, env) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const code = String(body.code || '').trim().toUpperCase();
+  if (!/^[A-F0-9]{36}$/.test(code)) return json({ error: "Codice non valido" }, 400);
+  const hash = await rawHash(code), at = nowIso();
+  const r = await env.DB.prepare(`UPDATE raw_external_transfers SET status='claimed', recipient_id=?, claimed_at=?
+    WHERE code_hash=? AND status='pending' AND expires_at > ? AND sender_id != ?
+    AND EXISTS (SELECT 1 FROM slabs WHERE id=raw_external_transfers.slab_id AND physical_owner_id=raw_external_transfers.sender_id AND is_ungraded=1 AND archived_at IS NULL AND COALESCE(is_test,0)=0)
+    AND NOT EXISTS (SELECT 1 FROM listings WHERE slab_id=raw_external_transfers.slab_id AND status IN ('active','reserved'))
+    AND NOT EXISTS (SELECT 1 FROM sales WHERE slab_id=raw_external_transfers.slab_id AND status IN ('requested','accepted','paid','shipped'))`)
+    .bind(user.id,at,hash,at,user.id).run();
+  if (!r.meta.changes) return json({ error: "Codice scaduto, già usato o carta non trasferibile" }, 409);
+  return json({ ok: true, status: 'awaiting_owner_approval', message: 'Il proprietario deve approvare il trasferimento dopo la consegna fisica.' });
+}
+
 // «Ho venduto fuori da DreaMint»: soft archive of an ungraded card by its owner. Nothing is deleted;
 // the card leaves the album and can no longer be listed. Refused while a listing or a sale is open.
 async function archiveCard(request, env, id) {
@@ -2010,6 +2101,32 @@ function presentSale(r, viewer) {
   };
 }
 
+async function reportSaleDispute(request, env, saleId) {
+  const user = await requireUser(request, env);
+  const sale = await env.DB.prepare("SELECT id, buyer_id, status FROM sales WHERE id = ?").bind(saleId).first();
+  if (!sale || sale.buyer_id !== user.id) return json({ error: "Vendita non trovata" }, 404);
+  if (sale.status !== 'shipped') return json({ error: "La contestazione è disponibile solo durante la spedizione" }, 409);
+  const body = await readJson(request);
+  const reason = String(body.reason || '').trim().slice(0, 1000);
+  if (reason.length < 10) return json({ error: "Descrivi il problema (almeno 10 caratteri)" }, 400);
+  const at = nowIso();
+  const r = await env.DB.prepare(`INSERT INTO sale_disputes (sale_id, buyer_id, reason, status, created_at)
+    SELECT ?,?,?, 'open', ? WHERE NOT EXISTS (SELECT 1 FROM sale_disputes WHERE sale_id = ? AND status = 'open')`)
+    .bind(saleId,user.id,reason,at,saleId).run();
+  if (!r.meta.changes) return json({ error: "Esiste già una contestazione aperta" }, 409);
+  await audit(env,user.id,'sale_dispute_open','sale',saleId,{ reason });
+  try { await sendNotifyEmail(env, { subject: 'DreaMint: contestazione vendita ' + saleId, text: 'Contestazione aperta sulla vendita ' + saleId + '\nMotivo: ' + reason }); } catch (_) {}
+  return json({ ok: true, status: 'open', message: 'Trasferimento automatico sospeso fino alla risoluzione.' });
+}
+async function resolveSaleDispute(request, env, saleId) {
+  const admin = await requireAdmin(request, env);
+  const r = await env.DB.prepare("UPDATE sale_disputes SET status='resolved', resolved_at=?, resolved_by=? WHERE sale_id=? AND status='open'")
+    .bind(nowIso(),admin.id,saleId).run();
+  if (!r.meta.changes) return json({ error: 'Nessuna contestazione aperta' }, 404);
+  await audit(env,admin.id,'sale_dispute_resolved','sale',saleId,{});
+  return json({ ok: true });
+}
+
 async function mySales(request, env) {
   const user = await requireUser(request, env);
   const rows = await env.DB.prepare(
@@ -2028,7 +2145,9 @@ async function mySales(request, env) {
   const days = Number(env.PAYPAL_AUTOCOMPLETE_DAYS || 14);
   const now = Date.now();
   for (const row of rows.results || []) {
-    if (shouldAutoComplete(row, now, days)) {
+    const blocked = await env.DB.prepare("SELECT 1 AS blocked FROM sale_disputes WHERE sale_id = ? AND status = 'open'").bind(row.id).first();
+    row.dispute_open = !!blocked;
+    if (!blocked && shouldAutoComplete(row, now, days)) {
       if (await completeSaleTransfer(env, row, user.id, "auto_receive")) {
         row.status = "completed";
         row.received_at = nowIso();
@@ -2175,6 +2294,7 @@ async function saleAction(request, env, saleId, action) {
   if (action === "receive") {
     if (user.id !== sale.buyer_id) return json({ error: "Solo l'acquirente può confermare la ricezione" }, 403);
     if (sale.status !== "shipped") return json({ error: "Il venditore deve prima segnare la spedizione" }, 400);
+    if (await env.DB.prepare("SELECT 1 FROM sale_disputes WHERE sale_id = ? AND status = 'open'").bind(saleId).first()) return json({ error: "Contestazione aperta: trasferimento sospeso" }, 409);
     const done = await completeSaleTransfer(env, sale, user.id, "sale_received");
     if (!done) return json({ error: "Questa vendita non è più in spedizione" }, 409);
     await notifyDigitalOwnerTransferCode(env, request, { sendNotifyEmail }, sale.slab_id);
@@ -2829,7 +2949,7 @@ async function completeSaleTransfer(env, sale, actorId, actionName) {
   // (buyer on Full Set / Solo digitale; the unchanged digital owner on Solo carta fisica).
   const rotation = await makeTransferCode();
   const res = await env.DB.batch([
-    env.DB.prepare("UPDATE sales SET status = 'completed', received_at = ? WHERE id = ? AND status = ?").bind(at, sale.id, from),
+    env.DB.prepare("UPDATE sales SET status = 'completed', received_at = ? WHERE id = ? AND status = ? AND NOT EXISTS (SELECT 1 FROM sale_disputes WHERE sale_id = ? AND status = 'open')").bind(at, sale.id, from, sale.id),
     env.DB.prepare("UPDATE listings SET status = 'completed' WHERE id = ? AND " + done).bind(sale.listing_id, sale.id, at),
     slabStmt,
     ...transferCodeRotateStmts(env, sale.slab_id, rotation, done, [sale.id, at]),

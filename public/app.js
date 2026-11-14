@@ -34,6 +34,17 @@
     return copy;
   }
 
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest && ev.target.closest("[data-dispute]");
+    if (!btn) return;
+    var reason = prompt("Descrivi il problema di consegna o conformità (almeno 10 caratteri):");
+    if (reason === null) return;
+    if (reason.trim().length < 10) { alert("Inserisci almeno 10 caratteri."); return; }
+    btn.disabled = true;
+    api("sales/" + encodeURIComponent(btn.getAttribute("data-dispute")) + "/dispute", { body: { reason: reason.trim() } })
+      .then(function () { dmToast("Contestazione aperta. Trasferimento sospeso."); render(); })
+      .catch(function (err) { alert(err.message); btn.disabled = false; });
+  });
   function api(path, opts) {
     opts = opts || {};
     var headers = Object.assign({ "content-type": "application/json" }, opts.headers || {});
@@ -2003,6 +2014,15 @@
     } else if (window.DreaMintTradeV9 && window.DreaMintTradeV9.on() && window.DreaMintTradeV9.listFormHtml(c)) {
       html += window.DreaMintTradeV9.listFormHtml(c);
     }
+    if (c.is_ungraded && isOwnCard(c) && !c.archived_at) {
+      html += '<section class="sold-outside" aria-label="Trasferimento esterno">' +
+        '<h3>Trasferisci la carta fuori da DreaMint</h3>' +
+        '<p class="dim">Il trasferimento sposta la registrazione nell’album del destinatario. Non verifica pagamento o spedizione.</p>' +
+        '<button type="button" class="btn" id="raw-transfer-create">Genera codice monouso (15 minuti)</button>' +
+        '<div id="raw-transfer-code" role="status"></div>' +
+        '<div id="raw-transfer-status" role="status"></div>' +
+        '<p class="error" id="raw-transfer-error" hidden></p></section>';
+    }
     html += soldOutsideHtml(c);
     html += "</div></section>";
     var galFlags = Object.assign({}, c.photos || {});
@@ -2578,7 +2598,9 @@
       }
       if (isBuyer && s.status === "shipped") {
         actions += '<button class="btn primary" data-act="receive" data-id="' + s.id + '">' + tr("sales.received") + "</button> ";
-        actions += '<p class="dim">' + tr("sales.autoComplete", { days: ((state.cfg.paypal && state.cfg.paypal.autoCompleteDays) || 14) }) + "</p>";
+        if (s.dispute_open) actions += '<p class="notice">Contestazione aperta: trasferimento sospeso.</p>';
+        else actions += '<button class="btn ghost" data-dispute="' + esc(s.id) + '">Segnala mancata consegna o problema</button>';
+        actions += '<p class="dim">' + (s.dispute_open ? 'Il trasferimento automatico è sospeso fino alla risoluzione.' : tr("sales.autoComplete", { days: ((state.cfg.paypal && state.cfg.paypal.autoCompleteDays) || 14) })) + "</p>";
       }
       actions += saleReviewHtml(s);
       return '<div class="list-item"><div></div><div><b>' + esc(s.card_name) + "</b><div class=\"dim\">" + role + " · " + esc(saleStatusLabel(s)) + " · " + saleBreakdown(s) + "</div>" +
@@ -3496,6 +3518,19 @@
         // reveal-v2 hook: cornice rarità + retro sigillato nelle tile (logica in /js/reveal-v2.js)
         if (window.DreamintRevealV2) window.DreamintRevealV2.enhanceGrid(mine.cards || [], state.user);
         bindAlbumTabs();
+        var redeemHost = document.createElement("section");
+        redeemHost.className = "panel";
+        redeemHost.innerHTML = '<h3>Ricevi una carta non gradata</h3><p class="dim">Se hai ricevuto una carta fuori da DreaMint, inserisci il codice fornito dal proprietario. Il trasferimento richiede la sua conferma.</p>' +
+          '<form id="raw-transfer-redeem"><label class="field">Codice monouso<input name="code" required maxlength="36" autocomplete="off" autocapitalize="characters"></label><button class="btn" type="submit">Richiedi trasferimento</button></form><p id="raw-redeem-msg" role="status"></p>';
+        $app.appendChild(redeemHost);
+        var rf = document.getElementById("raw-transfer-redeem");
+        rf.onsubmit = function (ev) {
+          ev.preventDefault(); var btn = rf.querySelector("button"); btn.disabled = true;
+          api("external-transfers/redeem", { body: { code: rf.elements.code.value } })
+            .then(function () { document.getElementById("raw-redeem-msg").textContent = "Richiesta inviata. Il proprietario deve confermare dopo la consegna fisica."; rf.reset(); })
+            .catch(function (err) { document.getElementById("raw-redeem-msg").textContent = err.message; })
+            .finally(function () { btn.disabled = false; });
+        };
         bindCloseListingButtons($app);
         bindUsernameForm();
         bindPrivacyToggle();
@@ -3531,6 +3566,38 @@
             });
         };
         bindCloseListingButtons($app);
+        var createRaw = document.getElementById("raw-transfer-create");
+        if (createRaw) {
+          var statusHost = document.getElementById("raw-transfer-status");
+          var codeHost = document.getElementById("raw-transfer-code");
+          var errHost = document.getElementById("raw-transfer-error");
+          function rawErr(err) { errHost.hidden = false; errHost.textContent = err.message || String(err); }
+          function rawStatus() {
+            api("cards/" + encodeURIComponent(one.card.id) + "/external-transfer/status").then(function (data) {
+              var t = data.transfer;
+              if (!t) { statusHost.textContent = "Nessun trasferimento attivo."; return; }
+              if (new Date(t.expires_at).getTime() <= Date.now()) { statusHost.textContent = "Codice scaduto. Generane uno nuovo."; return; }
+              statusHost.innerHTML = t.status === "claimed" ?
+                '<p>Il destinatario ha richiesto il trasferimento. Conferma solo dopo aver verificato la consegna della carta fisica.</p><button type="button" class="btn primary" id="raw-approve">Approva trasferimento</button>' :
+                '<p>Codice in attesa del destinatario. Scade: ' + esc(new Date(t.expires_at).toLocaleString()) + '</p>';
+              if (t.status === "claimed") document.getElementById("raw-approve").onclick = function () {
+                if (!confirm("Confermi che la carta fisica è stata consegnata? La registrazione passerà al destinatario e non sarà più nel tuo album.")) return;
+                api("cards/" + encodeURIComponent(one.card.id) + "/external-transfer/approve", { body: {} })
+                  .then(function () { dmToast("Trasferimento registrato (vendita esterna non verificata)."); go("#/album"); })
+                  .catch(rawErr);
+              };
+            }).catch(rawErr);
+          }
+          createRaw.onclick = function () {
+            errHost.hidden = true; createRaw.disabled = true;
+            api("cards/" + encodeURIComponent(one.card.id) + "/external-transfer/create", { body: {} })
+              .then(function (data) { codeHost.innerHTML = '<p>Condividi il codice solo con il destinatario:</p><strong style="overflow-wrap:anywhere">' + esc(data.code) + '</strong><p class="dim">Scade tra 15 minuti. Non è una prova di pagamento.</p>'; rawStatus(); })
+              .catch(rawErr).finally(function () { createRaw.disabled = false; });
+          };
+          rawStatus();
+          var refreshRaw = document.createElement("button"); refreshRaw.type = "button"; refreshRaw.className = "btn ghost";
+          refreshRaw.textContent = "Aggiorna stato"; refreshRaw.onclick = rawStatus; statusHost.after(refreshRaw);
+        }
         var so = document.getElementById("sold-outside");
         if (so) so.onclick = function () {
           var er = document.getElementById("sold-outside-err");
