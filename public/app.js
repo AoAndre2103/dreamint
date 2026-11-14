@@ -132,6 +132,8 @@
     return { img: photoSrc(id, "front", 560), srcset: photoSrcset(id, "front") };
   }
   var CHARIZARD_ART = "https://assets.tcgdex.net/it/swsh/swsh4/25/high.webp";
+  // Immagine esclusivamente dimostrativa: non rappresenta un oggetto posseduto o certificato.
+  var DEMO_MEW_ART = "/img/demo/mew-green-030-en.jpg";
   var PIKACHU_ART = "https://assets.tcgdex.net/it/sv/sv03.5/025/high.webp";
   var LUFFY_ART = "https://optcgapi.com/media/static/Card_Images/OP05-119_p1.jpg";
   function exampleCards() {
@@ -3592,9 +3594,9 @@
         // reveal-v2 hook: nuova estrazione se caricata, altrimenti la vecchia (reveal.js)
         state.revealUnmount = (window.DreamintRevealV2 || window.GemintReveal).mount(document.getElementById("reveal-root"), {
           tier: demoTier, serial: 1 + Math.floor(Math.random() * 9999), total: 9999,
-          name: "Charizard", code: "25/185", setName: "Voltaggio Sfolgorante",
-          grader: "PSA", grade: "10", certKey: "PSA-DEMO",
-          photoUrl: CHARIZARD_ART, photoSrcset: "", fullSet: false, autoplay: auto, demo: true
+          name: "Mew", code: "030", setName: "Pokémon TCG · G/RGB",
+          grader: "", grade: "", certKey: "",
+          photoUrl: DEMO_MEW_ART, photoSrcset: "", fullSet: false, autoplay: auto, demo: true
         });
         return;
       }

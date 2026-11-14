@@ -268,3 +268,25 @@ html[data-rv2-pal="ref2"] .rv2-plate[data-rv2-tier="mitica"] .rv2-chip, html[dat
   .rv2-rays { width: 160vmax; margin: -80vmax 0 0 -80vmax;
     -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.6) 27%, transparent 60%); mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.6) 27%, transparent 60%); }
 }
+
+/* Interactive card viewer: used for both demo and genuine reveals. */
+.rv2-card3d.rv2-viewable { touch-action: none; cursor: grab; }
+.rv2-card3d.rv2-interacting { cursor: grabbing; }
+.rv2-card3d.rv2-viewable .rv2-flipper { transition: transform .28s ease-out; }
+.rv2-card3d.rv2-interacting .rv2-flipper { transition: none; }
+.rv2-card3d.rv2-viewable .rv2-face { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .rv2-card3d.rv2-viewable .rv2-flipper { transition: none; } }
+
+/* Rarity-synchronised reflections: the same tier palette is used for demo and real reveals. */
+.rv2-copy[data-rv2-tier="comune"] .rv2-holo { opacity: 0.06; background: linear-gradient(115deg, transparent 30%, #9AA3AD55 48%, transparent 68%); }
+.rv2-copy[data-rv2-tier="rara"] .rv2-holo { opacity: .34; background: repeating-linear-gradient(115deg, #132E6E66 0%, #6BA3FFaa 12%, #CFE0FF99 24%, #132E6E66 36%); }
+.rv2-copy[data-rv2-tier="epica"] .rv2-holo { opacity: .42; background: repeating-linear-gradient(115deg, #3E127288 0%, #C084FCbb 12%, #F5DEFF99 24%, #3E127288 36%); }
+.rv2-copy[data-rv2-tier="leggendaria"] .rv2-holo { opacity: .53; background: repeating-linear-gradient(115deg, #8A641888 0%, #F0CF6Ecc 12%, #FFF7D6bb 24%, #8A641888 36%); }
+.rv2-copy[data-rv2-tier="mitica"] .rv2-holo { opacity: .58; background: repeating-linear-gradient(115deg, #FF8A3Dbb 0%, #FFD166bb 7%, #02AC79bb 14%, #6BA3FFbb 21%, #C084FCbb 28%, #FF4D8Dbb 35%); }
+/* Alternate palette: preserve consistency with the selected rarity theme. */
+html[data-rv2-pal="ref2"] .rv2-copy[data-rv2-tier="comune"] .rv2-holo { background: linear-gradient(115deg, transparent 30%, #2EE6B888 48%, transparent 68%); }
+html[data-rv2-pal="ref2"] .rv2-copy[data-rv2-tier="rara"] .rv2-holo { background: repeating-linear-gradient(115deg, #2C117088 0%, #A66BFFbb 12%, #E6D6FFaa 24%, #2C117088 36%); }
+html[data-rv2-pal="ref2"] .rv2-copy[data-rv2-tier="epica"] .rv2-holo { background: repeating-linear-gradient(115deg, #6E0F4C88 0%, #FF5FC8bb 12%, #FFD6F3aa 24%, #6E0F4C88 36%); }
+html[data-rv2-pal="ref2"] .rv2-copy[data-rv2-tier="mitica"] .rv2-holo { background: repeating-linear-gradient(115deg, #F3D98Abb 0%, #DDE8FFbb 7%, #FFC6F0bb 14%, #BFFFF0bb 21%, #C9D6FFbb 28%, #FFFFFFbb 35%); }
+.rv2-card3d.rv2-viewable .rv2-holo { transition: transform .1s linear; }
+@media (prefers-reduced-motion: reduce) { .rv2-card3d.rv2-viewable .rv2-holo { transition: none; animation: none; } }
