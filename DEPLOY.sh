@@ -64,6 +64,7 @@ probe() { case $1 in
   migrate-v28.sql) echo "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='raw_external_transfers'";;
   migrate-v30.sql) echo "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='price_offers'";;
   migrate-v32.sql) echo "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='ungraded_transfer_codes'";;
+  migrate-v36.sql) echo "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='user_follows'";;
   *) echo "";; esac; }
 MIGS=$(ls migrate-v1[3-9].sql migrate-v2[0-9].sql migrate-v3[0-9].sql 2>/dev/null | sort -V)
 confirm "Applicare le migrazioni mancanti sul DB di produzione?" || { echo "annullato"; exit 1; }

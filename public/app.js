@@ -1,7 +1,7 @@
 
 (function () {
   "use strict";
-  var state = { user: null, cfg: window.GEMINT_CONFIG || {}, revealUnmount: null };
+  var state = { user: null, cfg: window.GEMINT_CONFIG || {}, revealUnmount: null, unreadNotifications: 0 };
   var $app = document.getElementById("app");
   function tr(key, vars) {
     return (window.DreamintI18n && window.DreamintI18n.t) ? window.DreamintI18n.t(key, vars) : key;
@@ -700,7 +700,7 @@
       }).catch(function (e2) { save.disabled = false; err.hidden = false; err.textContent = (e2 && e2.message) || tr("plan.required"); });
     });
     document.getElementById("plan-logout").onclick = function () {
-      api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; go("#/"); render(); });
+      api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; state.unreadNotifications = 0; go("#/"); render(); });
     };
   }
   function bindUsernameGate() {
@@ -740,7 +740,7 @@
       });
     });
     document.getElementById("gate-logout").onclick = function () {
-      api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; go("#/"); render(); });
+      api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; state.unreadNotifications = 0; go("#/"); render(); });
     };
     setTimeout(function () { try { input.focus(); } catch (e) {} }, 50);
   }
@@ -1161,6 +1161,10 @@
       (data.private ? ' <span class="pill warn">' + esc(tr("admin.albumPrivate")) + "</span>" : "") + "</h1>" +
       (adminView && data.private ? '<p class="dim">' + esc(tr("admin.albumPrivateNote")) + "</p>" : "") +
       (data.cards_count == null ? "" : "<p>" + esc(tr("album.profileLede", { name: username || handle })) + " " + esc(cardsCountLabel(count)) + ".</p>") + "</div>" +
+      (username && (!state.user || state.user.username !== username) ?
+        '<div class="profile-follow" data-follow-username="' + esc(username) + '">' +
+        '<button type="button" class="btn primary" data-follow-action disabled>' + esc(socialText('Caricamento…', 'Loading…')) + '</button>' +
+        '<span class="dim" data-follow-count></span><small class="dim" data-follow-hint></small></div>' : '') +
       (username && !data.private ? '<div class="profile-share"><label class="sr-only" for="profile-share-url">' + esc(tr("album.shareHint")) + "</label>" +
       '<input id="profile-share-url" type="text" readonly value="' + esc(share) + '">' +
       '<button type="button" class="btn" id="profile-share-btn">' + esc(tr("album.share")) + "</button>" +
@@ -1217,9 +1221,43 @@
       b.addEventListener("click", function () { run(b, "admin/cards/" + encodeURIComponent(b.getAttribute("data-admin-remove-card")), "admin.confirmRemoveCard"); });
     });
   }
+  function socialText(it, en) { return langIsEn() ? en : it; }
+  function bindFollowProfile() {
+    var box = document.querySelector('[data-follow-username]');
+    if (!box) return;
+    var username = box.getAttribute('data-follow-username');
+    var btn = box.querySelector('[data-follow-action]');
+    var count = box.querySelector('[data-follow-count]');
+    var hint = box.querySelector('[data-follow-hint]');
+    var isFollowing = false;
+    if (!btn) return;
+    function update(d) {
+      isFollowing = !!d.following;
+      if (d.is_self) { box.hidden = true; return; }
+      count.textContent = (Number(d.followers_count) || 0) + ' ' + socialText('follower', 'followers');
+      btn.disabled = false;
+      btn.textContent = !state.user ? socialText('Accedi per seguire', 'Sign in to follow') :
+        isFollowing ? socialText('Non seguire', 'Unfollow') : socialText('Segui', 'Follow');
+      if (hint) hint.textContent = !d.album_public ? socialText('Le carte di questo Album sono private: niente avvisi finché non viene reso pubblico.', 'This album is private: no alerts until it becomes public.') :
+        socialText('Ricevi un avviso quando pubblica una nuova carta.', 'Get notified when a new card is published.');
+    }
+    btn.disabled = true;
+    api('users/' + encodeURIComponent(username) + '/follow').then(update).catch(function () {
+      btn.disabled = false; btn.textContent = socialText('Segui', 'Follow');
+    });
+    btn.addEventListener('click', function () {
+      if (!state.user) { go('#/accedi'); return; }
+      if (btn.disabled) return;
+      btn.disabled = true;
+      api('users/' + encodeURIComponent(username) + '/follow', { method: isFollowing ? 'DELETE' : 'POST' })
+        .then(function (d) { update(d); })
+        .catch(function (err) { btn.disabled = false; dmToast(err.message); });
+    });
+  }
   function bindPublicProfile() {
     bindAlbumTabs();
     bindAdminAlbumTools();
+    bindFollowProfile();
     var btn = document.getElementById("profile-share-btn");
     var input = document.getElementById("profile-share-url");
     if (!btn || !input) return;
@@ -1537,6 +1575,18 @@
     if (bd) { bd.hidden = false; bd.classList.add("is-open"); }
     document.body.classList.add("mob-nav-open");
   }
+  function updateNotificationBadges() {
+    document.querySelectorAll('a[href="#/notifiche"]').forEach(function (a) {
+      a.innerHTML = esc(socialText('Notifiche', 'Notifications')) + adminBadgeHtml(state.unreadNotifications);
+    });
+  }
+  function refreshNotificationCount() {
+    if (!state.user) { state.unreadNotifications = 0; updateNotificationBadges(); return; }
+    api('me/notifications').then(function (data) {
+      state.unreadNotifications = Number(data.unread_count) || 0;
+      updateNotificationBadges();
+    }).catch(function () {});
+  }
   function navItems() {
     var u = state.user;
     var items = [
@@ -1546,6 +1596,7 @@
       { href: "#/commissioni", label: trx("nav.fees", "Commissioni e piani"), cls: "nav-fees" }
     ];
     if (u) items.push({ href: "#/vendite", label: tr("po.nav") });
+    if (u) items.push({ href: "#/notifiche", label: socialText("Notifiche", "Notifications"), badge: state.unreadNotifications });
     if (u && window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) items.push({ href: "#/messaggi", label: tr("chat.inbox") });
     if (u && u.role === "admin") items.push({ href: "#/admin", label: tr("nav.admin"), badge: pendingReviewCount() });
     items.push({ href: "#/assistenza", label: tr("nav.support"), cls: "nav-support" });
@@ -1892,6 +1943,40 @@
     });
   }
 
+  function pageFollowNotifications(data, following) {
+    var list = data.notifications || [];
+    var users = (following && following.users) || [];
+    var html = '<div class="page-head"><h1>' + esc(socialText('Notifiche', 'Notifications')) + '</h1>' +
+      '<p>' + esc(socialText('Le nuove carte pubblicate dai collezionisti che segui.', 'New cards published by the collectors you follow.')) + '</p></div>' +
+      '<section class="panel follow-notifications"><div class="follow-notif-head"><h2>' + esc(socialText('Aggiornamenti', 'Updates')) +
+      ' (' + Number(data.unread_count || 0) + ')</h2>' +
+      (Number(data.unread_count || 0) ? '<button class="btn" type="button" id="follow-mark-read">' + esc(socialText('Segna tutte come lette', 'Mark all as read')) + '</button>' : '') + '</div>';
+    html += list.length ? '<ul class="follow-notification-list">' + list.map(function (n) {
+      return '<li class="follow-notification' + (!n.read_at ? ' unread' : '') + '">' +
+        '<a href="#/u/' + encodeURIComponent(n.actor_username) + '" data-link>@' + esc(n.actor_username) + '</a> ' +
+        esc(socialText('ha aggiunto una carta:', 'added a card:')) + ' ' +
+        '<a href="#/carta/' + encodeURIComponent(n.card_id) + '" data-link><strong>' + esc(n.card_name) + '</strong></a>' +
+        (n.set_name ? ' · ' + esc(n.set_name) : '') +
+        (n.code_printed ? ' · ' + esc(n.code_printed) : '') +
+        '<time datetime="' + esc(n.created_at) + '">' + esc(new Date(n.created_at).toLocaleDateString(langIsEn() ? 'en-GB' : 'it-IT')) + '</time></li>';
+    }).join('') + '</ul>' : '<p class="dim">' + esc(socialText('Nessuna notifica al momento.', 'No notifications yet.')) + '</p>';
+    html += '</section><section class="panel follow-notifications"><h2>' + esc(socialText('Utenti seguiti', 'Following')) + '</h2>' +
+      (users.length ? '<div class="follow-user-list">' + users.map(function (u) {
+        return '<a class="btn ghost" href="#/u/' + encodeURIComponent(u.username) + '" data-link>@' + esc(u.username) + (u.private ? ' · ' + esc(socialText('Album privato', 'Private album')) : '') + '</a>';
+      }).join('') + '</div>' : '<p class="dim">' + esc(socialText('Non segui ancora nessuno. Cerca un utente e premi Segui nel suo profilo.', 'You are not following anyone yet. Search for a user and select Follow on their profile.')) + '</p>') + '</section>';
+    return html;
+  }
+  function bindFollowNotifications() {
+    var btn = document.getElementById('follow-mark-read');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      api('me/notifications/read', { method: 'POST', body: {} }).then(function () {
+        state.unreadNotifications = 0;
+        render();
+      }).catch(function (err) { btn.disabled = false; dmToast(err.message); });
+    });
+  }
   function pageAccount(pendingPaypal) {
     if (!state.user) return pageAuth("login");
     return '<section class="panel"><h2>' + tr("account.title") + "</h2><p><b>" + esc(state.user.display_name) + "</b></p><p class=\"muted\">" + esc(state.user.email) + " · " + esc(state.user.country || tr("auth.countryDefault")) + "</p>" +
@@ -3767,6 +3852,7 @@
       }
       api(mode === "signup" ? "auth/signup" : "auth/login", { body: body }).then(function (d) {
         state.user = d.user;
+        state.unreadNotifications = 0; refreshNotificationCount();
         if (mode === "signup") clearStoredRef();
         go("#/album");
       }).catch(function (err) { showErr(mode === "signup" ? usernameErrorMessage(err) : err.message); });
@@ -3876,7 +3962,7 @@
         var vr = document.getElementById("verify-resend");
         if (vr) vr.onclick = function () { vr.disabled = true; api("auth/resend-verification", { method: "POST", body: {} }).then(function () { document.getElementById("verify-msg").textContent = "Email inviata."; }).catch(function (err) { vr.disabled = false; document.getElementById("verify-msg").textContent = err.message; }); };
         var lo = document.getElementById("logout");
-        if (lo) lo.onclick = function () { api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; go("#/"); }); };
+        if (lo) lo.onclick = function () { api("auth/logout", { method: "POST", body: {} }).then(function () { state.user = null; state.unreadNotifications = 0; go("#/"); }); };
         var pf = document.getElementById("paypal-form");
         if (pf) pf.onsubmit = function (e) {
           e.preventDefault();
@@ -3944,6 +4030,16 @@
           window.DreaMintTradeV9.bindCertForm($app);
           window.DreaMintTradeV9.decorateTiles($app);
         }
+        return;
+      }
+      if (p[0] === 'notifiche') {
+        if (!state.user) { $app.innerHTML = pageAuth('login'); bindAuth('login'); return; }
+        $app.innerHTML = '<div class="skel" style="min-height:240px"></div>';
+        var socialData = await Promise.all([api('me/notifications'), api('me/following')]);
+        state.unreadNotifications = Number(socialData[0].unread_count) || 0;
+        updateNotificationBadges();
+        $app.innerHTML = pageFollowNotifications(socialData[0], socialData[1]);
+        bindFollowNotifications();
         return;
       }
       if (p[0] === "u" && p[1]) {
@@ -4431,6 +4527,9 @@
       }).observe($app, { childList: true });
     }
     render();
+    refreshNotificationCount();
+    // Aggiornamento leggero delle notifiche in-app anche quando la pagina resta aperta.
+    setInterval(refreshNotificationCount, 60000);
   }
   boot();
 })();

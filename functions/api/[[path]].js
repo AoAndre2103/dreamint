@@ -34,6 +34,7 @@ import {
 import { lookupExternalCatalog, safeExternalCatalogImage } from "../lib/catalog-search.js";
 import { handleCertificateRoutes, issueCertificateForSlab, makeTransferCode, transferCodeRotateStmts, notifyDigitalOwnerTransferCode } from "../lib/certificate.js";
 import { handleUngradedTransfers } from "../lib/ungraded-transfer.js";
+import { handleSocialRoutes, notifyFollowersNewCard } from "../lib/social.js";
 import { handlePriceRoutes, snapshotHits, maybeRefreshModelPrice, attachTrendsToListings, snapshotFromHit } from "../lib/price-history.js";
 import { handleLaunchRoutes, getLaunchState } from "../lib/launch-state.js";
 import { enforceIpRule, assertLoginAllowed, recordLoginFailure, enforceIdentRule, SUPPORT_USER_RULE } from "../lib/rate-limit.js";
@@ -167,6 +168,9 @@ async function route(request, env, path, url) {
 
   const chatRes = await handleChatRoutes(request, env, method, path, url, { requireUser, nowIso, readJson, audit });
   if (chatRes) return chatRes;
+
+  const socialRes = await handleSocialRoutes(request, env, method, path, url, { getUser, requireUser });
+  if (socialRes) return socialRes;
 
   const rawTransferRes = await handleUngradedTransfers(request, env, path, {
     requireUser, readJson, audit
@@ -2756,6 +2760,8 @@ async function approveCard(request, env, id) {
     await audit(env, admin.id, "publish_ungraded", "slab", id, { modelId });
     let fresh = await loadSlab(env, id);
     await maybeAutoList(env, fresh);
+    // Pubblica una sola notifica per nuovo inserimento visibile; l'errore di notifica non annulla l'approvazione.
+    try { await notifyFollowersNewCard(env, id); } catch (err) { console.log('follow notification error', err && err.message); }
     fresh = await loadSlab(env, id);
     return json({ card: presentSlab(fresh, admin, true) });
   }
@@ -2808,6 +2814,7 @@ async function approveCard(request, env, id) {
   } catch (e) {
     console.log("certificate issue failed", e && e.message);
   }
+  try { await notifyFollowersNewCard(env, id); } catch (err) { console.log('follow notification error', err && err.message); }
   const fresh = await loadSlab(env, id);
   const out = { card: presentSlab(fresh, admin, true) };
   if (issued && issued.code) out.transfer_code = issued.code;
@@ -2899,6 +2906,7 @@ async function adminCreateTestCard(request, env) {
   } catch (e) {
     console.log("certificate issue failed", e && e.message);
   }
+  try { await notifyFollowersNewCard(env, id); } catch (err) { console.log('follow notification error', err && err.message); }
   const fresh = await loadSlab(env, id);
   const out = { card: presentSlab(fresh, admin, true) };
   if (issued && issued.code) out.transfer_code = issued.code;

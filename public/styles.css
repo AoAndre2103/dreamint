@@ -1786,3 +1786,14 @@ body.mob-nav-open { overflow: hidden; }
 .admin-inventory-card span{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
 .admin-inventory-card small{color:var(--muted,#81939a);font-size:.78rem}
 @media(max-width:710px){.admin-user-row{grid-template-columns:42px minmax(0,1fr);gap:8px}.admin-user-stats,.admin-user-meta{grid-column:2}.admin-user-stats{flex-direction:row;flex-wrap:wrap;gap:12px}.admin-user-summary{gap:8px}.admin-inventory-grid{grid-template-columns:1fr}}
+
+/* v36 — seguirsi tra collezionisti */
+.profile-follow { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:12px 0; }
+.profile-follow small { flex-basis:100%; line-height:1.4; }
+.follow-notifications { margin-block:18px; }
+.follow-notif-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.follow-notification-list { list-style:none; margin:16px 0 0; padding:0; }
+.follow-notification { display:flex; align-items:center; flex-wrap:wrap; gap:5px; padding:13px 8px; border-top:1px solid rgba(130,160,155,.2); }
+.follow-notification.unread { border-left:3px solid var(--mint,#02ac79); padding-left:12px; background:rgba(2,172,121,.07); }
+.follow-notification time { margin-left:auto; font-size:.83em; opacity:.7; }
+.follow-user-list { display:flex; gap:9px; flex-wrap:wrap; margin-top:12px; }

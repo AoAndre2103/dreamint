@@ -1,3 +1,12 @@
+## v36 — 2026-11-15 — Segui e notifiche nuove carte (locale, non pubblicata)
+
+- Aggiunto Segui / Non seguire sui profili, con protezione anti self-follow e lista profili seguiti.
+- Nuova area Notifiche per nuove carte approvate negli Album pubblici, badge non letti, polling 60 secondi e azione «Segna tutte come lette».
+- Notifiche idempotenti; nessuna notifica per carte in verifica, test o Album privati. Le notifiche di carte cedute, archiviate o ora private non vengono restituite.
+- API `GET/POST/DELETE /api/users/:username/follow`, `GET /api/me/following`, `GET /api/me/notifications`, `POST /api/me/notifications/read`.
+- Nuova migrazione `migrate-v36.sql` e schema locale aggiornato, sonda automatica nello script di deploy. Nessuna pubblicazione sul sito online.
+- Test nuovi su segui, permessi, approvazione admin, notifiche, privacy, read e unfollow; 166/166 test automatici superati.
+
 ## v35 — 2026-11-15 — Rubrica iscritti e inventari amministrativi (locale, NON pubblicata)
 
 - Aggiunta la sezione Admin → Iscritti con directory alfabetica completa, ricerca nome/username/email, paginazione e contatori di carte/annunci.

@@ -134,5 +134,5 @@ test('frontend includes admin directory navigation and protected UI routes', () 
   assert.match(app, /function pageAdminUsers\(/);
   assert.match(app, /function pageAdminUserDetail\(/);
   assert.match(app, /p\[0\] === "admin" && p\[1\] === "utenti"/);
-  assert.match(html, /\/app\.js\?v=20261115v35adminusers/);
+  assert.match(html, /\/app\.js\?v=20261115v36follows/);
 });

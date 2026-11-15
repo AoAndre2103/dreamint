@@ -1,5 +1,14 @@
 # DreaMint
 
+## Novità v36: Segui e notifiche (locale, NON pubblicata)
+
+- Nei profili `#/u/:username` compare **Segui / Non seguire** per gli utenti autenticati. Anche un profilo con Album privato può essere seguito, ma **non mostra le sue carte né genera notifiche** finché l'Album non diventa pubblico.
+- Nuova sezione **Notifiche** (`#/notifiche`) con contatore di avvisi non letti, collegamenti alla carta e al profilo, comando «Segna tutte come lette» ed elenco dei profili seguiti. L'app verifica nuove notifiche all'apertura e ogni 60 secondi quando è aperta. **Sono avvisi dentro DreaMint, non email né notifiche push del telefono.**
+- Le notifiche si generano **alla prima approvazione** di una nuova carta, non al solo caricamento in verifica. Nessun avviso per carte di test, archiviate, già trasferite o appartenenti ad Album privati. Una nuova approvazione non duplica l'avviso. Il server verifica nuovamente privacy e proprietà quando elenca gli avvisi.
+- Smettere di seguire un utente cancella i relativi avvisi. La funzione non consente di seguire il proprio profilo; massimo 500 seguiti per account.
+- **Database:** applicare `migrate-v36.sql` con le tabelle additive `user_follows` e `follow_notifications` (lo script `DEPLOY.sh` riconosce la migrazione). Per database nuovi, `schema.sql` le include già. Non sono stati modificati database e sito di produzione.
+- Verifiche automatiche: **166/166 test** superati, inclusi approvazione admin, privacy, autorizzazioni, read/unfollow e regressioni v35.
+
 ## Novità v35: elenco completo degli iscritti per gli admin (locale, NON pubblicata)
 
 - Nel pannello **Admin** è disponibile **Iscritti · Album e Market** (`#/admin/utenti`). Gli utenti vengono elencati per nome in ordine alfabetico, con ricerca per nome, username o email e paginazione da 40 account.
