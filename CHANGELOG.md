@@ -10,6 +10,13 @@
 
 Storia ricavata dal codice, dalle migrazioni e dal lavoro recente sul frontend. Le versioni del server (v13–v21) coincidono con i file `migrate-vN.sql`. Il frontend in questo albero è la v9b, con estrazione reveal-v2 revisione rv3.
 
+## Correzione 2026-11-15 — eliminazione della carta Gengar senza retro
+
+- Aggiunto `DELETE /api/cards/:id` riservato al proprietario: ritira dall'album carte non gradate e registrazioni gradate ancora in verifica o rifiutate, anche senza retro.
+- Compatibilità per vecchie carte gradate già approvate **senza retro**, ma **non ancora aperte**: è consentita la rimozione solo se il retro è realmente assente dall'archivio foto. Il certificato con rarità già assegnata rimane riservato.
+- Protezioni su annunci attivi/in pausa/prenotati e vendite in corso, con controlli nel database e audit. Archiviazione non distruttiva (`owner_removed`), non accessibile da album, link e certificati pubblici.
+- Pulsante **Elimina carta** visibile nel proprio album e nei dettagli, distinto da **Elimina annuncio** e **Ho venduto fuori**. Test di regressione dedicati; nessuna nuova migrazione SQL.
+
 ## Server
 
 ### v21

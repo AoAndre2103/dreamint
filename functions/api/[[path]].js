@@ -238,6 +238,10 @@ async function route(request, env, path, url) {
   if (rawTransfer && ((method === "GET" && rawTransfer[2] === "status") || method === "POST"))
     return rawTransferAction(request, env, rawTransfer[1], rawTransfer[2]);
   if (method === "POST" && path === "external-transfers/redeem") return redeemRawTransfer(request, env);
+  // Il proprietario può ritirare una registrazione incompleta (anche senza foto del retro).
+  const cardRemove = path.match(/^cards\/([^/]+)$/);
+  if (method === "DELETE" && cardRemove) return removeMyCard(request, env, cardRemove[1]);
+
   const cardArchive = path.match(/^cards\/([^/]+)\/archive$/);
   if (method === "POST" && cardArchive) return archiveCard(request, env, cardArchive[1]);
 
@@ -1054,7 +1058,7 @@ async function challengeVideoRow(env, slabId) {
 async function serveChallengeVideo(request, env, slabId) {
   const user = await getUser(request, env);
   const slab = await env.DB.prepare("SELECT * FROM slabs WHERE id = ?").bind(slabId).first();
-  if (!slab || !user || isHiddenTest(slab, user)) return json({ error: "Video non trovato" }, 404);
+  if (!slab || !user || isHiddenCard(slab, user)) return json({ error: "Video non trovato" }, 404);
   const row = await challengeVideoRow(env, slabId);
   // Privacy: the clip has the uploader's voice -> only the uploader (while still an owner) and admins.
   if (!row || !(user.role === "admin" || (row.user_id === user.id && isOwner(slab, user)))) return json({ error: "Video non trovato" }, 404);
@@ -1586,6 +1590,15 @@ function presentSlab(slab, user, includePrivate) {
     can_archive: (user && user.id === slab.physical_owner_id)
       ? !!(slab.is_ungraded && !slab.archived_at && !slab.listing_id)
       : undefined,
+    // Rimozione autonoma solo per non gradate o registrazioni gradate non ancora certificate.
+    can_remove: (user && user.id === slab.physical_owner_id)
+      ? !!(!slab.archived_at && !slab.listing_id &&
+          (slab.is_ungraded
+            ? ["in_review", "rejected", "approved", "listed"].includes(slab.status)
+            : ["in_review", "rejected"].includes(slab.status) &&
+              slab.digital_owner_id === user.id && !slab.assigned_at &&
+              !slab.rarity_tier && slab.serial_number == null && !slab.opened_at))
+      : undefined,
     // Owner / admin only: why maybeAutoList did not put the card on sale (see lib/listing-status.js).
     listing_blocked_reason: (admin || (user && user.id === slab.physical_owner_id))
       ? listingBlockedReason(slab, user && user.id === slab.physical_owner_id ? user.paypal_email : slab.physical_owner_paypal_email)
@@ -1709,6 +1722,69 @@ async function redeemRawTransfer(request, env) {
   if (!r.meta.changes) return json({ error: "Codice scaduto, già usato o carta non trasferibile" }, 409);
   return json({ ok: true, status: 'awaiting_owner_approval', message: 'Il proprietario deve approvare il trasferimento dopo la consegna fisica.' });
 }
+// Eliminazione dal proprio album: soft archive senza alterare vendite, rarità o certificati
+// già convalidati. Una registrazione gradata in verifica/rifiutata può essere ritirata
+// anche se mancava la foto del retro. La validazione avviene in SQL, non solo nella UI.
+async function removeMyCard(request, env, id) {
+  const user = await requireUser(request, env);
+  const slab = await env.DB.prepare(
+    "SELECT id, status, is_test, is_ungraded, physical_owner_id, digital_owner_id, archived_at, grader, certificate_no, assigned_at, rarity_tier, serial_number, opened_at FROM slabs WHERE id = ?"
+  ).bind(id).first();
+  if (!slab || isHiddenTest(slab, user) || slab.physical_owner_id !== user.id) {
+    return json({ error: "Carta non trovata" }, 404);
+  }
+  if (slab.archived_at) return json({ error: "Carta già rimossa", code: "already_removed" }, 409);
+  const provisionalGraded = !slab.is_ungraded &&
+    ["in_review", "rejected"].includes(slab.status) &&
+    slab.digital_owner_id === user.id && !slab.assigned_at &&
+    !slab.rarity_tier && slab.serial_number == null && !slab.opened_at;
+  const removableRaw = !!slab.is_ungraded &&
+    ["in_review", "rejected", "approved", "listed"].includes(slab.status);
+  // Compatibilità con le prime registrazioni: alcune gradate sono state approvate
+  // senza retro. Solo il proprietario di entrambe le componenti può ritirarle,
+  // prima dell'apertura, e solo se il retro manca davvero dall'archivio foto.
+  const legacyGradedNoBack = !slab.is_ungraded &&
+    slab.status === "approved" && slab.digital_owner_id === user.id &&
+    !slab.opened_at && !(await listPhotoKinds(env, id)).back;
+  if (!provisionalGraded && !removableRaw && !legacyGradedNoBack) {
+    return json({ error: "Una carta gradata già certificata non può essere cancellata dal proprietario. Contatta l'assistenza.", code: "certified_card" }, 409);
+  }
+  const at = nowIso();
+  const auditId = crypto.randomUUID();
+  const applied = "EXISTS (SELECT 1 FROM audit_logs WHERE id = ?)";
+  const res = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE slabs SET archived_at = ?, archived_reason = 'owner_removed',
+         certificate_no = CASE WHEN is_ungraded = 0 AND status IN ('in_review','rejected') THEN ? ELSE certificate_no END
+       WHERE id = ? AND physical_owner_id = ? AND archived_at IS NULL
+         AND ( (is_ungraded = 1 AND status IN ('in_review','rejected','approved','listed'))
+           OR (is_ungraded = 0 AND status IN ('in_review','rejected')
+               AND digital_owner_id = ? AND assigned_at IS NULL AND rarity_tier IS NULL
+               AND serial_number IS NULL AND opened_at IS NULL)
+           OR (is_ungraded = 0 AND status = 'approved'
+               AND digital_owner_id = ? AND opened_at IS NULL) )
+         AND NOT EXISTS (SELECT 1 FROM listings WHERE slab_id = ? AND status IN ('active','reserved','paused'))
+         AND NOT EXISTS (SELECT 1 FROM sales WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped'))`
+    ).bind(at, "REMOVED-" + id, id, user.id, user.id, user.id, id, id),
+    env.DB.prepare(
+      `INSERT INTO audit_logs (id, actor_id, action, entity, entity_id, payload, created_at)
+       SELECT ?, ?, 'owner_remove_card', 'slab', ?, ?, ? WHERE changes() > 0`
+    ).bind(auditId, user.id, id, JSON.stringify({ previous_status: slab.status,
+      is_ungraded: !!slab.is_ungraded, grader: slab.grader,
+      original_certificate_no: slab.is_ungraded ? null : slab.certificate_no,
+      legacy_missing_back: legacyGradedNoBack }), at),
+    env.DB.prepare(
+      `INSERT INTO slab_owner_history (id, slab_id, from_user_id, to_user_id, reason, sale_id, created_at)
+       SELECT ?, ?, ?, NULL, 'owner_removed', NULL, ? WHERE ` + applied
+    ).bind(crypto.randomUUID(), id, user.id, at, auditId)
+  ]);
+  if (!res[0].meta || !res[0].meta.changes) {
+    return json({ error: "Prima di eliminare la carta chiudi gli annunci e le richieste o vendite in corso.", code: "card_has_active_transactions" }, 409);
+  }
+  // Nessun DELETE fisico: audit e cronologia restano; l'eventuale certificato di una
+  // richiesta mai approvata viene liberato, così il proprietario può ripetere l'upload.
+  return json({ ok: true, card_id: id, archived_at: at, archived_reason: "owner_removed" });
+}
 
 // «Ho venduto fuori da DreaMint»: soft archive of an ungraded card by its owner. Nothing is deleted;
 // the card leaves the album and can no longer be listed. Refused while a listing or a sale is open.
@@ -1761,7 +1837,14 @@ async function getCard(request, env, id) {
     card.challenge_video = !!(vr && (user.role === "admin" || vr.user_id === user.id));
   }
   try { await maybeRefreshModelPrice(env, card.model); } catch (e) { /* ignore */ }
-  return json({ card: applyPhotoPresence(card, await listPhotoKinds(env, id)) });
+  applyPhotoPresence(card, await listPhotoKinds(env, id));
+  // Solo nel dettaglio (dove si controlla effettivamente KV) si mostra il tasto
+  // anche per una vecchia gradazione approvata ma priva del retro.
+  if (!card.can_remove && user && user.id === slab.physical_owner_id &&
+      user.id === slab.digital_owner_id && !slab.is_ungraded &&
+      slab.status === "approved" && !slab.opened_at && !slab.archived_at &&
+      !slab.listing_id && card.missing_back) card.can_remove = true;
+  return json({ card });
 }
 
 async function publicCard(env, id) {
@@ -1807,7 +1890,7 @@ async function listRecent(request, env) {
             m.game, m.set_name, m.code_printed, m.name AS card_name, m.language, m.catalog_image
      FROM slabs s
      JOIN card_models m ON m.id = s.card_model_id
-     WHERE s.status IN ('approved', 'listed') AND ${testVisibleSql(user)} AND (s.archived_reason IS NULL OR s.archived_reason <> 'admin_removed')
+     WHERE s.status IN ('approved', 'listed') AND ${testVisibleSql(user)} AND s.archived_at IS NULL
      ORDER BY s.created_at DESC
      LIMIT 12`
   ).all();

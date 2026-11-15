@@ -928,10 +928,15 @@
   function closeListingTileOk(c) {
     return !!(c && c.id && c.listing_id && c.listing_status === "active");
   }
+  function removeCardBtnHtml(c, cls) {
+    return '<button type="button" class="btn ghost danger ' + (cls || "") + '" data-remove-card="' + esc(c.id) + '">' + esc(tr("card.removeBtn")) + "</button>";
+  }
   function albumCardTile(c, opts) {
     var link = albumCardTileLink(c, opts);
-    if (!opts || opts.public || !opts.owner || !closeListingTileOk(c)) return link;
-    return '<div class="tile-wrap">' + link + closeListingBtnHtml(c, "tile-close") + "</div>";
+    if (!opts || opts.public || !opts.owner) return link;
+    var close = closeListingTileOk(c) ? closeListingBtnHtml(c, "tile-close") : "";
+    var remove = c.can_remove ? removeCardBtnHtml(c, "tile-close") : "";
+    return close || remove ? '<div class="tile-wrap">' + link + close + remove + "</div>" : link;
   }
   function openCloseListingDialog(listingId, isRaw) {
     var prev = document.activeElement;
@@ -987,6 +992,19 @@
       btn.onclick = function (ev) {
         ev.preventDefault();
         openCloseListingDialog(btn.getAttribute("data-close-listing"), btn.getAttribute("data-raw") === "1");
+      };
+    });
+  }
+  // È una cancellazione della registrazione, non solo del relativo annuncio.
+  function bindRemoveCardButtons(root) {
+    root.querySelectorAll("[data-remove-card]").forEach(function (btn) {
+      btn.onclick = function (ev) {
+        ev.preventDefault();
+        if (!confirm(tr("card.removeConfirm"))) return;
+        btn.disabled = true;
+        api("cards/" + encodeURIComponent(btn.getAttribute("data-remove-card")), { method: "DELETE" })
+          .then(function () { dmToast(tr("card.removeOk")); if (location.hash === "#/album") render(); else go("#/album"); })
+          .catch(function (err) { btn.disabled = false; alert(String(err && err.message || tr("card.removeError"))); });
       };
     });
   }
@@ -2025,6 +2043,10 @@
         '<p class="error" id="raw-transfer-error" hidden></p></section>';
     }
     html += soldOutsideHtml(c);
+    if (c.can_remove) {
+      html += '<div class="card-remove-action"><p class="row-actions">' + removeCardBtnHtml(c) + '</p>' +
+        '<p class="dim">' + esc(tr("card.removeHint")) + '</p></div>';
+    }
     html += "</div></section>";
     var galFlags = Object.assign({}, c.photos || {});
     if (c.missing_back) galFlags.back = false;
@@ -3564,6 +3586,7 @@
             .finally(function () { btn.disabled = false; });
         };
         bindCloseListingButtons($app);
+        bindRemoveCardButtons($app);
         bindUsernameForm();
         bindPrivacyToggle();
         return;
@@ -3630,6 +3653,7 @@
           var refreshRaw = document.createElement("button"); refreshRaw.type = "button"; refreshRaw.className = "btn ghost";
           refreshRaw.textContent = "Aggiorna stato"; refreshRaw.onclick = rawStatus; statusHost.after(refreshRaw);
         }
+        bindRemoveCardButtons($app);
         var so = document.getElementById("sold-outside");
         if (so) so.onclick = function () {
           var er = document.getElementById("sold-outside-err");
