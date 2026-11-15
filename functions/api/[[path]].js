@@ -229,6 +229,8 @@ async function route(request, env, path, url) {
 
   if (method === "POST" && path === "cards") return registerCard(request, env);
   if (method === "GET" && path === "cards") return myCards(request, env);
+  const cardCatalog = path.match(/^cards\/([^/]+)\/catalog$/);
+  if (method === "PATCH" && cardCatalog) return updateCardCatalog(request, env, cardCatalog[1]);
 
   const cardOpen = path.match(/^cards\/([^/]+)\/open$/);
   if (method === "POST" && cardOpen) return openCard(request, env, cardOpen[1]);
@@ -1604,6 +1606,14 @@ function presentSlab(slab, user, includePrivate) {
       ? listingBlockedReason(slab, user && user.id === slab.physical_owner_id ? user.paypal_email : slab.physical_owner_paypal_email)
       : undefined,
     can_list: !!(owner && !slab.archived_at && slab.status === "approved" && slab.physical_owner_id === user?.id && (slab.is_ungraded || (slab.opened_at && slab.digital_owner_id === user?.id))),
+    // Il proprietario può correggere il collegamento a TCGdex senza ricreare la carta.
+    // Le gradate certificate restano immutabili; per le non gradate anche un annuncio attivo è correggibile.
+    can_edit_catalog: !!(user && user.id === slab.physical_owner_id && !slab.archived_at &&
+      (slab.is_ungraded
+        ? ["in_review", "rejected", "approved", "listed"].includes(slab.status)
+        : (["in_review", "rejected"].includes(slab.status) &&
+          user.id === slab.digital_owner_id && !slab.assigned_at &&
+          !slab.rarity_tier && slab.serial_number == null && !slab.opened_at))),
     can_update_photos: !!(owner && slab.status === "in_review"),
     market: presentMarket(slab, user),
     asking_price_cents: (owner || admin || includePrivate) ? (slab.asking_price_cents || null) : null,
@@ -1722,6 +1732,104 @@ async function redeemRawTransfer(request, env) {
   if (!r.meta.changes) return json({ error: "Codice scaduto, già usato o carta non trasferibile" }, 409);
   return json({ ok: true, status: 'awaiting_owner_approval', message: 'Il proprietario deve approvare il trasferimento dopo la consegna fisica.' });
 }
+// Corregge la stampa Pokémon associata a una carta già caricata, anche con annuncio attivo.
+// Si accetta SOLO un ID TCGdex, si scaricano i dettagli dal server e si lascia invariato
+// ID carta, fotografie, prezzo, venditore, certificato e dati delle transazioni.
+async function updateCardCatalog(request, env, id) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const catalogId = String(body.catalog_id || "").trim();
+  const language = String(body.language || "").trim().toUpperCase();
+  if (!/^pokemon:[a-z0-9][a-z0-9.-]{1,90}$/i.test(catalogId)) {
+    return json({ error: "Seleziona una carta dalla lista TCGdex", code: "catalog_selection_required" }, 400);
+  }
+  if (!["ITA", "ENG", "FRA", "DEU", "ESP", "POR", "JPN"].includes(language)) {
+    return json({ error: "Seleziona una lingua supportata da TCGdex", code: "invalid_language" }, 400);
+  }
+  const slab = await env.DB.prepare(
+    `SELECT s.*, m.game AS model_game, m.id AS old_model_id
+     FROM slabs s JOIN card_models m ON m.id = s.card_model_id WHERE s.id = ?`
+  ).bind(id).first();
+  if (!slab || isHiddenTest(slab, user) || slab.physical_owner_id !== user.id) {
+    return json({ error: "Carta non trovata" }, 404);
+  }
+  if (slab.model_game !== "pokemon") return json({ error: "TCGdex è disponibile per le carte Pokémon" }, 400);
+  const allowable = !slab.archived_at && (
+    slab.is_ungraded ? ["in_review", "rejected", "approved", "listed"].includes(slab.status) :
+      ["in_review", "rejected"].includes(slab.status) &&
+      slab.digital_owner_id === user.id && !slab.assigned_at &&
+      !slab.rarity_tier && slab.serial_number == null && !slab.opened_at
+  );
+  if (!allowable) return json({ error: "I dati di una carta gradata certificata o archiviata non possono essere modificati", code: "catalog_locked" }, 409);
+  const blocked = await env.DB.prepare(
+    `SELECT 1 AS blocked FROM listings WHERE slab_id = ? AND status IN ('reserved','paused')
+     UNION ALL SELECT 1 AS blocked FROM sales WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped') LIMIT 1`
+  ).bind(id, id).first();
+  if (blocked) return json({ error: "Impossibile cambiare la carta con richieste d'acquisto o vendite in corso", code: "catalog_sale_locked" }, 409);
+
+  let hit = null;
+  try {
+    const result = await lookupExternalCatalog(env, { game: "pokemon", id: catalogId, lang: language });
+    hit = (result.hits || []).find((h) => h.id === catalogId && h.game === "pokemon") || null;
+  } catch (e) { /* il catalogo è esterno */ }
+  if (!hit || !hit.name || !hit.set_name || !hit.code_printed) {
+    return json({ error: "TCGdex non ha restituito i dati completi di questa carta. Riprova più tardi.", code: "catalog_unavailable" }, 422);
+  }
+  if (hit.language !== language) {
+    return json({ error: "Carta non trovata su TCGdex nella lingua selezionata: scegli la lingua della tua carta", code: "catalog_language_mismatch" }, 422);
+  }
+  if (!hit.image) {
+    return json({ error: "Questa scheda TCGdex non ha un'immagine identificativa: impossibile salvare il collegamento verificato", code: "catalog_image_missing" }, 422);
+  }
+  const variant = String(body.variant || hit.variant || "normal");
+  if (!VARIANTS.some((v) => v.id === variant)) return json({ error: "Variante non valida" }, 400);
+  const condition = body.condition == null || body.condition === "" ? null : String(body.condition);
+  if (condition !== null && (!slab.is_ungraded || !CONDITIONS.some((c) => c.id === condition))) {
+    return json({ error: "Condizione non valida" }, 400);
+  }
+  // Un modello è una stampa, NON una singola carta: non riscrivere il vecchio modello
+  // se è condiviso con altre carte. Colleghiamo la registrazione al modello TCGdex corretto.
+  const model = await findOrCreateModel(env, {
+    game: "pokemon", name: hit.name, set_name: hit.set_name, set_code: hit.set_code,
+    code: hit.code_printed, language, variant, catalog_image: hit.image
+  });
+  // Lo stesso modello può essere stato creato manualmente senza ID TCGdex.
+  // L'immagine permette al recupero prezzi di interrogare la stampa esatta.
+  if (model.catalog_image !== hit.image || (!model.set_code && hit.set_code)) {
+    await env.DB.prepare(
+      "UPDATE card_models SET catalog_image = ?, set_code = CASE WHEN set_code IS NULL OR set_code = '' THEN ? ELSE set_code END WHERE id = ?"
+    ).bind(hit.image, hit.set_code || null, model.id).run();
+    model.catalog_image = hit.image;
+    if (!model.set_code) model.set_code = hit.set_code || null;
+  }
+  const avg = Number(hit.cardmarket_avg_euros);
+  const referenceCents = Number.isFinite(avg) && avg > 0 ? Math.round(avg * 100) : null;
+  const result = await env.DB.prepare(
+    `UPDATE slabs SET card_model_id = ?, cardmarket_avg_cents = ?,
+          card_condition = COALESCE(?, card_condition)
+     WHERE id = ? AND physical_owner_id = ? AND archived_at IS NULL AND
+       ((is_ungraded = 1 AND status IN ('in_review','rejected','approved','listed')) OR
+        (is_ungraded = 0 AND status IN ('in_review','rejected')
+         AND digital_owner_id = ? AND assigned_at IS NULL AND rarity_tier IS NULL
+         AND serial_number IS NULL AND opened_at IS NULL))
+       AND NOT EXISTS (SELECT 1 FROM listings WHERE slab_id = ? AND status IN ('reserved','paused'))
+       AND NOT EXISTS (SELECT 1 FROM sales WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped'))`
+  ).bind(model.id, referenceCents, condition, id, user.id, user.id, id, id).run();
+  if (!result.meta || !result.meta.changes) {
+    return json({ error: "La carta non può più essere modificata: verifica eventuali vendite in corso", code: "catalog_sale_locked" }, 409);
+  }
+  await audit(env, user.id, "update_card_catalog", "slab", id, {
+    old_model_id: slab.old_model_id, new_model_id: model.id, catalog_id: catalogId,
+    language, variant, condition_updated: condition !== null
+  });
+  // Prezzi reali TCGdex/Cardmarket già ottenuti dal dettaglio: registra subito il
+  // riferimento del NUOVO modello, senza inventare dati o riusare quelli del vecchio.
+  try { await snapshotFromHit(env, { ...hit, ...model, game: "pokemon" }); } catch (e) { /* il salvataggio carta non dipende dai prezzi */ }
+  const updated = await loadSlab(env, id);
+  return json({ card: presentSlab(updated, user, true), linked_catalog_id: catalogId,
+    price_available: referenceCents != null || !!hit.cardmarket });
+}
+
 // Eliminazione dal proprio album: soft archive senza alterare vendite, rarità o certificati
 // già convalidati. Una registrazione gradata in verifica/rifiutata può essere ritirata
 // anche se mancava la foto del retro. La validazione avviene in SQL, non solo nella UI.

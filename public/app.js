@@ -1941,6 +1941,111 @@
     return head + albumSectionsHtml(cards, { owner: true, tab: tab });
   }
 
+  // v29: selezione della stampa TCGdex da una carta o annuncio già esistente.
+  function catalogEditorHtml(c) {
+    if (!c.can_edit_catalog || !c.model || c.model.game !== "pokemon") return "";
+    var langs = ["ITA", "ENG", "JPN", "FRA", "DEU", "ESP", "POR"];
+    var language = c.model.language || "ITA";
+    var langOptions = langs.map(function (key) {
+      return '<option value="' + key + '"' + (key === language ? " selected" : "") + '>' + esc(languageName(key)) + '</option>';
+    }).join("");
+    var variants = (state.cfg.variants || []).map(function (v) {
+      return '<option value="' + esc(v.id) + '"' + (v.id === c.model.variant ? " selected" : "") + '>' + esc(variantLabel(v.id)) + '</option>';
+    }).join("");
+    var conditions = (state.cfg.conditions || []).map(function (v) {
+      return '<option value="' + esc(v.id) + '"' + (v.id === c.card_condition ? " selected" : "") + '>' + esc(conditionLabel(v.id)) + '</option>';
+    }).join("");
+    return '<details class="panel catalog-editor" id="catalog-editor"><summary>' + esc(tr("catalogEdit.title")) + '</summary>' +
+      '<p class="dim">' + esc(tr("catalogEdit.hint")) + '</p>' +
+      (c.listing_status === "active" ? '<p class="notice">' + esc(tr("catalogEdit.activeSale")) + '</p>' : "") +
+      '<form id="catalog-editor-form" novalidate>' +
+      '<label class="field">' + esc(tr("catalogEdit.language")) + '<select name="language" id="catalog-edit-language">' + langOptions + '</select></label>' +
+      '<label class="field">' + esc(tr("catalogEdit.searchLabel")) + '<input id="catalog-edit-search" type="search" autocomplete="off" maxlength="100" placeholder="' + esc(tr("catalogEdit.placeholder")) + '" value="' + esc(c.model.name || "") + '"></label>' +
+      '<div id="catalog-edit-results" class="catalog-edit-results" aria-live="polite"></div>' +
+      '<div id="catalog-edit-selected" class="catalog-edit-selected" hidden></div>' +
+      '<label class="field">' + esc(tr("catalogEdit.variant")) + '<select name="variant">' + variants + '</select></label>' +
+      (c.is_ungraded ? '<label class="field">' + esc(tr("catalogEdit.condition")) + '<select name="condition">' + conditions + '</select></label>' : "") +
+      '<p class="dim">' + esc(tr("catalogEdit.preserve")) + '</p>' +
+      '<p class="error" id="catalog-edit-error" role="alert" hidden></p>' +
+      '<button class="btn primary" type="submit" id="catalog-edit-save" disabled>' + esc(tr("catalogEdit.save")) + '</button>' +
+      '</form></details>';
+  }
+
+  function bindCatalogEditor(card) {
+    var form = document.getElementById("catalog-editor-form");
+    if (!form) return;
+    var search = document.getElementById("catalog-edit-search");
+    var results = document.getElementById("catalog-edit-results");
+    var selectedBox = document.getElementById("catalog-edit-selected");
+    var save = document.getElementById("catalog-edit-save");
+    var lang = document.getElementById("catalog-edit-language");
+    var error = document.getElementById("catalog-edit-error");
+    var selectedId = "";
+    var sequence = 0;
+    var timer;
+    function message(text) { error.textContent = text || ""; error.hidden = !text; }
+    function clear() { selectedId = ""; selectedBox.hidden = true; selectedBox.innerHTML = ""; save.disabled = true; message(""); }
+    function renderHits(hits) {
+      results.innerHTML = hits.map(function (h) {
+        return '<button type="button" class="catalog-edit-hit" data-id="' + esc(h.id) + '">' +
+          (h.image_small ? '<img src="' + esc(h.image_small) + '" alt="" loading="lazy">' : "") +
+          '<span><b>' + esc(h.name) + '</b><small>' + esc([h.set_name, h.code_printed, h.language, variantLabel(h.variant)].filter(Boolean).join(" · ")) + '</small></span></button>';
+      }).join("") || '<p class="dim">' + esc(tr("catalogEdit.noResults")) + '</p>';
+    }
+    function searchHits() {
+      clear();
+      var q = search.value.trim();
+      var request = ++sequence;
+      if (q.length < 2) { results.innerHTML = ""; return; }
+      results.textContent = tr("catalogEdit.searching");
+      api("catalog/lookup?game=pokemon&q=" + encodeURIComponent(q) + "&lang=" + encodeURIComponent(lang.value))
+        .then(function (d) {
+          if (sequence !== request) return;
+          var hits = (d.hits || []).filter(function (h) { return h.game === "pokemon" && h.id && h.language === lang.value; });
+          renderHits(hits);
+        }).catch(function (err) {
+          if (sequence !== request) return;
+          results.textContent = "";
+          message(err.message || tr("catalogEdit.failed"));
+        });
+    }
+    var details = document.getElementById("catalog-editor");
+    if (details) details.addEventListener("toggle", function () {
+      if (details.open && !selectedId && !results.innerHTML.trim()) searchHits();
+    });
+    search.addEventListener("input", function () { ++sequence; clear(); results.innerHTML = ""; clearTimeout(timer); timer = setTimeout(searchHits, 300); });
+    lang.addEventListener("change", function () { ++sequence; clear(); clearTimeout(timer); searchHits(); });
+    results.addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-id]");
+      if (!btn) return;
+      selectedId = btn.getAttribute("data-id") || "";
+      var label = btn.querySelector("span");
+      selectedBox.textContent = tr("catalogEdit.selected") + ": " + (label
+        ? [label.querySelector("b") && label.querySelector("b").textContent, label.querySelector("small") && label.querySelector("small").textContent].filter(Boolean).join(" · ")
+        : selectedId);
+      selectedBox.hidden = false;
+      results.innerHTML = "";
+      save.disabled = !selectedId;
+      message("");
+    });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!selectedId || save.disabled) return;
+      save.disabled = true;
+      message("");
+      var fd = new FormData(form);
+      api("cards/" + encodeURIComponent(card.id) + "/catalog", { method: "PATCH", body: {
+        catalog_id: selectedId, language: String(fd.get("language") || ""),
+        variant: String(fd.get("variant") || "normal"), condition: fd.get("condition") || undefined
+      } }).then(function (d) {
+        if (!d.price_available) dmToast(tr("catalogEdit.noPrice"));
+        else dmToast(tr("catalogEdit.saved"));
+        // Stessa rotta: hashchange non scatta, quindi renderizziamo direttamente.
+        render();
+      }).catch(function (err) { save.disabled = false; message(err.message || tr("catalogEdit.failed")); });
+    });
+  }
+
   function pageCard(c) {
     var serial = c.serial_number ? serialFmt(c.serial_number, c.serial_total) : "";
     var html = '<section class="card-hero"><div class="slab-stage' + (c.is_ungraded ? " raw-stage" : "") + '">' +
@@ -2042,6 +2147,7 @@
         '<div id="raw-transfer-status" role="status"></div>' +
         '<p class="error" id="raw-transfer-error" hidden></p></section>';
     }
+    html += catalogEditorHtml(c);
     html += soldOutsideHtml(c);
     if (c.can_remove) {
       html += '<div class="card-remove-action"><p class="row-actions">' + removeCardBtnHtml(c) + '</p>' +
@@ -2495,6 +2601,8 @@
       "</div>") +
       '<p class="price">' + euros(listing.price_cents) + "</p>" +
       (!listing.is_test && !slab.is_test ? '<p class="muted"><a href="/annuncio/' + encodeURIComponent(listing.id) + '" target="_blank" rel="noopener">Link pubblico e condivisibile dell’annuncio</a></p>' : '') +
+      ((slab.can_edit_catalog && slab.model && slab.model.game === "pokemon")
+        ? '<p class="row-actions"><a class="btn ghost" href="#/carta/' + esc(slab.id) + '" data-link>' + esc(tr("catalogEdit.title")) + '</a></p>' : "") +
       priceTrendSlot({ slab_id: slab.id }, false) +
       ((listing.cardmarket_avg_cents || slab.cardmarket_avg_cents)
         ? '<p class="ref-price">' + esc(cardmarketLabel(listing.cardmarket_avg_cents || slab.cardmarket_avg_cents, true)) + "</p>"
@@ -3656,6 +3764,7 @@
           refreshRaw.textContent = "Aggiorna stato"; refreshRaw.onclick = rawStatus; statusHost.after(refreshRaw);
         }
         bindRemoveCardButtons($app);
+        bindCatalogEditor(one.card);
         var so = document.getElementById("sold-outside");
         if (so) so.onclick = function () {
           var er = document.getElementById("sold-outside-err");

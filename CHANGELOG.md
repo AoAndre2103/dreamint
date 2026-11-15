@@ -10,6 +10,15 @@
 
 Storia ricavata dal codice, dalle migrazioni e dal lavoro recente sul frontend. Le versioni del server (v13–v21) coincidono con i file `migrate-vN.sql`. Il frontend in questo albero è la v9b, con estrazione reveal-v2 revisione rv3.
 
+## v29 — 2026-11-15 — Correzione dati carta / collegamento TCGdex (locale, non pubblicato)
+
+- Nella pagina di una carta Pokémon propria, menu **«Modifica dati carta / collega TCGdex»**: ricerca TCGdex con lingua, risultati cliccabili con nome, espansione, numero e miniatura, scelta variante e (solo non gradate) condizione.
+- `PATCH /api/cards/:id/catalog` accetta esclusivamente un ID restituito da TCGdex: il server recupera nuovamente la scheda dettagliata, non si fida di testo o prezzi forniti dal browser e ricollega la carta a un modello corretto senza ricreare né la carta né l'annuncio.
+- Anche le non gradate già in vendita sono correggibili: conservati ID carta, foto fronte/retro, prezzo e annuncio; il nuovo modello aggiorna nome, set, lingua e grafico Cardmarket. Dall'annuncio proprio si può aprire la pagina di modifica.
+- Non sono correggibili le gradate già certificate/aperte e le carte con richieste di acquisto o vendite pendenti. Verifiche server proprietario, lingua, variante, condizione e audit log.
+- I prezzi Cardmarket sono registrati solo quando presenti nei dati ufficiali consultati: non vengono creati storici fittizi. Se TCGdex non ha prezzi per quella stampa, il collegamento si salva comunque ma il grafico potrebbe non comparire.
+- Nessuna migrazione al database, nessun intervento sui dati di produzione. Test API SQLite e integrazione grafico inclusi.
+
 ## Correzione 2026-11-15 — social fronte/retro, album e grafici Cardmarket
 
 - Esportazione post (1080×1350) e storia (1080×1920): le **non gradate** con retro disponibile mostrano foto fronte e retro affiancate, con etichette esplicite. Le gradate restano identiche; senza retro disponibile è conservato il layout solo fronte.
