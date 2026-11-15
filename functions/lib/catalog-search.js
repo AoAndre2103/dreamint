@@ -140,9 +140,14 @@ function cardmarketWindowsFromObject(cm) {
 }
 
 function cardmarketWindowsFromTcgdex(card) {
-  const cm = (card && card.pricing && card.pricing.cardmarket)
-    || ((card && card.variants_detailed && card.variants_detailed[0] && card.variants_detailed[0].pricing && card.variants_detailed[0].pricing.cardmarket) || null);
-  return cardmarketWindowsFromObject(cm);
+  const topLevel = cardmarketWindowsFromObject(card && card.pricing && card.pricing.cardmarket);
+  if (topLevel) return topLevel;
+  // A card's primary pricing can be null while a different detailed variant has Cardmarket data.
+  for (const variant of (card && card.variants_detailed) || []) {
+    const windows = cardmarketWindowsFromObject(variant && variant.pricing && variant.pricing.cardmarket);
+    if (windows) return windows;
+  }
+  return null;
 }
 
 function normalizeOpCode(raw) {
@@ -319,14 +324,18 @@ async function pokemonDetail(env, id, language) {
   const prefer = tcgdexLang(language);
   const langs = [prefer];
   if (prefer !== "en") langs.push("en");
+  let first = null;
   for (const lg of langs) {
     const r = await cachedUpstream(env, cacheKey(["tcgdex", "detail", lg, raw]), "https://api.tcgdex.net/v2/" + lg + "/cards/" + encodeURIComponent(raw));
     if (r.ok && r.body && r.body.id) {
       const h = pokemonHit(r.body, lg);
-      return h ? [h] : [];
+      if (!h) continue;
+      if (!first) first = h;
+      // If localized detail has no prices, the English detail sometimes does.
+      if (h.cardmarket || h.cardmarket_avg_euros) return [h];
     }
   }
-  return [];
+  return first ? [first] : [];
 }
 
 /* ---------------- Magic (Scryfall) ---------------- */

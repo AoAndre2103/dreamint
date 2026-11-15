@@ -195,12 +195,12 @@
     var daily = ((trend && trend.points) || []).filter(function (p) { return p.day && /^\d{4}-/.test(p.day) && p.price_cents > 0; });
     var min = isoDaysAgo(per.days);
     var inWin = daily.filter(function (p) { return p.day >= min; });
-    if (inWin.length >= per.min) {
+    if (inWin.length >= 2) {
       return { kind: "daily", pts: inWin.map(function (p) { return { label: fmtDay(p.day), price_cents: p.price_cents }; }) };
     }
     if (per.id === "7" || per.id === "30") {
       var wp = windowPoints(trend, per.id);
-      if (wp.length >= 3) return { kind: "windows", pts: wp };
+      if (wp.length >= 2) return { kind: "windows", pts: wp };
     }
     return { kind: "none", pts: [] };
   }

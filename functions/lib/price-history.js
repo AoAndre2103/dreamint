@@ -308,12 +308,20 @@ async function fetchLiveHit(env, model) {
   const hits = res.hits || [];
   if (!hits.length) return null;
   const code = normalizeCodeSimple(model.code_printed || model.code || model.code_normalized || "");
-  const named = hits.filter((h) => {
-    if (code && normalizeCodeSimple(h.code_printed) === code) return true;
-    if (model.name && String(h.name || "").toLowerCase() === String(model.name).toLowerCase()) return true;
-    return false;
-  });
-  return (named[0] || hits[0]);
+  const set = slugPart(model.set_code || model.set_name || "");
+  const byCode = code ? hits.filter((h) => normalizeCodeSimple(h.code_printed) === code) : [];
+  const exact = byCode.find((h) => set && (slugPart(h.set_code) === set || slugPart(h.set_name) === set))
+    || byCode[0]
+    || (!code && model.name ? hits.find((h) => String(h.name || "").toLowerCase() === String(model.name).toLowerCase()) : null);
+  // Avoid taking the first search result for a different printing of the card.
+  if (!exact) return null;
+  if (game === "pokemon" && String(exact.id || "").startsWith("pokemon:")) {
+    // TCGdex collection/search endpoints return summaries WITHOUT Cardmarket pricing.
+    // Load the full card detail before trying to snapshot a historical price.
+    const detailed = await lookupExternalCatalog(env, { game, id: exact.id, lang: model.language || "ITA" });
+    return (detailed.hits && detailed.hits[0]) || null;
+  }
+  return exact;
 }
 
 export async function refreshModelPrice(env, model, opts) {
@@ -322,10 +330,10 @@ export async function refreshModelPrice(env, model, opts) {
   if (!opts.force && await hasTodaySnapshot(env, ref)) return { skipped: true, reason: "already_today", card_ref: ref };
   const hit = await fetchLiveHit(env, { ...model, card_ref: ref });
   if (!hit) return { skipped: true, reason: "no_price", card_ref: ref };
-  const ok = await snapshotFromHit(env, { ...hit, language: model.language || hit.language, variant: model.variant || hit.variant, set_name: model.set_name || hit.set_name, set_code: model.set_code || hit.set_code, code_printed: model.code_printed || hit.code_printed, game: model.game || hit.game });
-  // Re-snapshot under the model's own card_ref so listing/history keys match
+  // Store the upstream price once under the model's stable card_ref.
+  // Snapshots under the search result's separate ref could refer to a different printing.
   const aligned = { ...hit, ...model, game: model.game || hit.game };
-  await snapshotFromHit(env, aligned);
+  const ok = await snapshotFromHit(env, aligned);
   return { ok, card_ref: ref };
 }
 

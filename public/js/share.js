@@ -216,22 +216,43 @@
     var glow = g.createRadialGradient(w / 2, story ? 760 : 560, 40, w / 2, story ? 760 : 560, 560);
     glow.addColorStop(0, hexA(color, 0.32)); glow.addColorStop(1, hexA(color, 0));
     g.fillStyle = glow; g.fillRect(0, 0, w, h);
-    var art = null, logo = null;
+    var art = null, back = null, logo = null;
     try { art = await loadImage(data.art); } catch (e) { art = null; }
-    try { logo = await loadImage("/img/dreamint-logo-full-dark.webp?v=20261110d"); } catch (e2) { logo = null; }
+    // Only physical, ungraded cards may show the seller's back photo.
+    if (data.ungraded && data.backArt) {
+      try { back = await loadImage(data.backArt); } catch (e2) { back = null; }
+    }
+    try { logo = await loadImage("/img/dreamint-logo-full-dark.webp?v=20261110d"); } catch (e3) { logo = null; }
     var top = story ? 120 : 56;
     paintLogo(g, logo, w / 2, top, 300);
-    var cw = story ? 700 : 520, chh = Math.round(cw * 1.4), cx = (w - cw) / 2, cy = top + (story ? 170 : 110);
-    g.save(); g.shadowColor = hexA(color, 0.55); g.shadowBlur = 60;
-    g.fillStyle = "#0B1C26"; g.beginPath(); drawRounded(g, cx, cy, cw, chh, 16); g.fill(); g.restore();
-    paintCard(g, art, cx, cy, cw, chh, color, tier === "mitica" || tier === "leggendaria" ? 12 : 8);
+    var pair = !!(data.ungraded && back);
+    var cw = pair ? (story ? 464 : 432) : (story ? 700 : 520);
+    var chh = Math.round(cw * 1.4);
+    var gap = pair ? (story ? 32 : 28) : 0;
+    var cx = pair ? (w - cw * 2 - gap) / 2 : (w - cw) / 2;
+    var cy = pair ? (story ? 335 : 205) : top + (story ? 170 : 110);
+    function drawPhoto(img, x, note) {
+      g.save(); g.shadowColor = hexA(color, 0.55); g.shadowBlur = 60;
+      g.fillStyle = "#0B1C26"; g.beginPath(); drawRounded(g, x, cy, cw, chh, 16); g.fill(); g.restore();
+      paintCard(g, img, x, cy, cw, chh, color, tier === "mitica" || tier === "leggendaria" ? 12 : 8);
+      if (note) {
+        g.fillStyle = "rgba(5,16,26,.90)";
+        g.beginPath(); drawRounded(g, x + 18, cy + chh - 64, 130, 44, 18); g.fill();
+        g.font = "700 23px 'JetBrains Mono', ui-monospace, monospace";
+        g.textAlign = "left"; g.fillStyle = "#F4EFE4";
+        g.fillText(note, x + 34, cy + chh - 35);
+        g.textAlign = "center";
+      }
+    }
+    drawPhoto(art, cx, pair ? "FRONTE" : "");
+    if (pair) drawPhoto(back, cx + cw + gap, "RETRO");
     if (data.refLabel) {
       g.font = "600 24px 'Inter Tight', Inter, sans-serif";
       var rw = g.measureText(data.refLabel).width + 32;
-      g.fillStyle = "rgba(7,19,28,.85)"; g.beginPath(); drawRounded(g, cx + 16, cy + chh - 56, rw, 40, 20); g.fill();
-      g.fillStyle = "#F4EFE4"; g.textAlign = "left"; g.fillText(data.refLabel, cx + 32, cy + chh - 28); g.textAlign = "center";
+      g.fillStyle = "rgba(7,19,28,.85)"; g.beginPath(); drawRounded(g, cx + 16, cy + chh - (pair ? 112 : 56), rw, 40, 20); g.fill();
+      g.fillStyle = "#F4EFE4"; g.textAlign = "left"; g.fillText(data.refLabel, cx + 32, cy + chh - (pair ? 84 : 28)); g.textAlign = "center";
     }
-    var y = cy + chh + (story ? 96 : 70);
+    var y = cy + chh + (pair ? (story ? 115 : 83) : (story ? 96 : 70));
     g.textAlign = "center";
     if (data.badge) {
       g.font = "700 30px 'JetBrains Mono', ui-monospace, monospace";

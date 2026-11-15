@@ -1018,7 +1018,7 @@
     var price = c.listing_price_cents != null ? c.listing_price_cents : pickPriceCents(c);
     var metaBits = [model.code_printed, model.language].filter(Boolean).join(" · ");
     return '<a class="slab-tile' + (raw ? " is-raw" : "") + (c.rarity_tier === "mitica" || c.rarity_tier === "leggendaria" ? " is-hype-owned" : "") + '" href="' + esc(href) + '"' + (href.charAt(0) === "#" ? " data-link" : ' target="_blank" rel="noopener"') + ">" +
-      (raw ? rawCardFigure(c, { album: true, albumTag: opts.public ? tr("raw.notForSale") : tr("raw.album") }) : gradedFrame(c)) +
+      (raw ? rawCardFigure(c, { album: true, albumTag: listed ? tr("raw.onSale") : (opts.public ? tr("raw.notForSale") : tr("raw.album")) }) : gradedFrame(c)) +
       '<div class="tile-meta"><strong>' + esc(cardTitle(c)) + "</strong>" +
       (metaBits ? "<span>" + esc(metaBits) + "</span>" : "") +
       "<div>" +
@@ -2116,9 +2116,11 @@
     var art = (graded && tier) ? location.origin + "/api/copies/" + encodeURIComponent(id) + "/art" : photoSrc(id, "front", 672);
     var refArt = (!graded && c.photos && c.photos.front === false) ? ((c.model && c.model.catalog_image) || "") : "";
     if (refArt) art = refArt;
+    var backArt = (!graded && id && !c.missing_back && (!c.photos || c.photos.back !== false))
+      ? ((listing && listing.back_url) || c.back_url || photoSrc(id, "back", 672)) : "";
     var watermark = (window.DreaMintTradeV9 && window.DreaMintTradeV9.watermarkText)
       ? window.DreaMintTradeV9.watermarkText(c, state.user) : "";
-    return { name: name, meta: meta, badge: badge, price: cents ? euros(cents) : "", url: publicCardUrl(c, listing), art: art,
+    return { name: name, meta: meta, badge: badge, price: cents ? euros(cents) : "", url: publicCardUrl(c, listing), art: art, backArt: backArt,
       tier: tier, ungraded: !graded, slug: name, refLabel: refArt ? tr("raw.refTag") : "", watermark: watermark };
   }
   function bindShareRow(c, listing) {

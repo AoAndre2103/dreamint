@@ -10,6 +10,14 @@
 
 Storia ricavata dal codice, dalle migrazioni e dal lavoro recente sul frontend. Le versioni del server (v13–v21) coincidono con i file `migrate-vN.sql`. Il frontend in questo albero è la v9b, con estrazione reveal-v2 revisione rv3.
 
+## Correzione 2026-11-15 — social fronte/retro, album e grafici Cardmarket
+
+- Esportazione post (1080×1350) e storia (1080×1920): le **non gradate** con retro disponibile mostrano foto fronte e retro affiancate, con etichette esplicite. Le gradate restano identiche; senza retro disponibile è conservato il layout solo fronte.
+- Nell’album la miniatura non gradata distingue **In vendita · carta fisica** (annuncio attivo) da **Nel tuo album** / **Non in vendita** (nessun annuncio), senza confondere la registrazione digitale con la vendita della carta fisica.
+- TCGdex/Cardmarket: il refresh prezzi scarica ora la scheda completa quando la ricerca restituisce solo una lista di riepilogo senza prezzi, recupera prezzi Cardmarket disponibili nella lingua inglese e nelle varianti dettagliate. Non seleziona un modello non corrispondente solo perché è il primo risultato.
+- Grafico: disegna due rilevazioni reali (giornaliere o medie Cardmarket) senza richiedere tre valori; nessun prezzo storico sintetico o inventato.
+- Cache-busting delle risorse aggiornate; 6 test di regressione nuovi, totale 114 test verdi. Nessuna migrazione SQL richiesta.
+
 ## Correzione 2026-11-15 — eliminazione della carta Gengar senza retro
 
 - Aggiunto `DELETE /api/cards/:id` riservato al proprietario: ritira dall'album carte non gradate e registrazioni gradate ancora in verifica o rifiutate, anche senza retro.
