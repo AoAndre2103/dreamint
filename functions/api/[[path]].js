@@ -33,6 +33,7 @@ import {
 } from "../lib/partners.js";
 import { lookupExternalCatalog, safeExternalCatalogImage } from "../lib/catalog-search.js";
 import { handleCertificateRoutes, issueCertificateForSlab, makeTransferCode, transferCodeRotateStmts, notifyDigitalOwnerTransferCode } from "../lib/certificate.js";
+import { handleUngradedTransfers } from "../lib/ungraded-transfer.js";
 import { handlePriceRoutes, snapshotHits, maybeRefreshModelPrice, attachTrendsToListings, snapshotFromHit } from "../lib/price-history.js";
 import { handleLaunchRoutes, getLaunchState } from "../lib/launch-state.js";
 import { enforceIpRule, assertLoginAllowed, recordLoginFailure, enforceIdentRule, SUPPORT_USER_RULE } from "../lib/rate-limit.js";
@@ -166,6 +167,11 @@ async function route(request, env, path, url) {
 
   const chatRes = await handleChatRoutes(request, env, method, path, url, { requireUser, nowIso, readJson, audit });
   if (chatRes) return chatRes;
+
+  const rawTransferRes = await handleUngradedTransfers(request, env, path, {
+    requireUser, readJson, audit
+  });
+  if (rawTransferRes) return rawTransferRes;
 
   const certRes = await handleCertificateRoutes(request, env, path, url, {
     corsHeaders: cors(),

@@ -783,7 +783,10 @@
     return "#/album";
   }
   function albumTabFromParts(parts, start) {
-    return (parts[start] === "non-gradate" || parts[start] === "raw") ? "raw" : "graded";
+    // Nell’Album non si deve selezionare una categoria per vedere le carte.
+    if (parts[start] === "non-gradate" || parts[start] === "raw") return "raw";
+    if (parts[start] === "gradate" || parts[start] === "graded") return "graded";
+    return "all";
   }
   function pickPriceCents(c) {
     if (!c) return null;
@@ -1047,27 +1050,35 @@
   }
   function albumSectionsHtml(cards, opts) {
     opts = opts || {};
-    var tab = opts.tab || "graded";
+    var tab = opts.tab || "all";
     var list = cards || [];
     var graded = list.filter(function (c) { return !isRawCard(opts.public ? normalizePublicCard(c) : c); });
     var raw = list.filter(function (c) { return isRawCard(opts.public ? normalizePublicCard(c) : c); });
-    var tabs = '<div class="album-tabs" role="tablist">' +
-      '<button type="button" class="album-tab' + (tab === "graded" ? " on" : "") + '" data-album-tab="graded" role="tab" aria-selected="' + (tab === "graded" ? "true" : "false") + '">' + esc(tr("nav.graded")) + ' <span class="album-tab-n">' + graded.length + "</span></button>" +
-      '<button type="button" class="album-tab' + (tab === "raw" ? " on" : "") + '" data-album-tab="raw" role="tab" aria-selected="' + (tab === "raw" ? "true" : "false") + '">' + esc(tr("nav.ungraded")) + ' <span class="album-tab-n">' + raw.length + "</span></button></div>";
-    function panel(items, kind, emptyKey) {
-      var body = items.length
-        ? '<div class="slab-gallery">' + items.map(function (c) { return albumCardTile(c, opts); }).join("") + "</div>"
-        : '<p class="empty">' + esc(tr(emptyKey)) + "</p>";
-      return '<div class="album-panel" data-album-panel="' + kind + '"' + (tab !== kind ? " hidden" : "") + ">" + body + "</div>";
-    }
-    return tabs + panel(graded, "graded", "album.emptyGraded") + panel(raw, "raw", "album.emptyRaw");
+    var filters = [
+      { key: "all", text: tr("album.filterAll"), items: list },
+      { key: "graded", text: tr("nav.graded"), items: graded },
+      { key: "raw", text: tr("nav.ungraded"), items: raw }
+    ];
+    var tabs = '<div class="album-tabs" role="tablist" aria-label="' + esc(tr("album.filterLabel")) + '">' +
+      filters.map(function (f) {
+        var active = tab === f.key;
+        return '<button type="button" class="album-tab' + (active ? " on" : "") +
+          '" id="album-filter-' + f.key + '" data-album-tab="' + f.key + '" role="tab" aria-controls="album-results" aria-selected="' + active + '">' +
+          esc(f.text) + ' <span class="album-tab-n">' + f.items.length + '</span></button>';
+      }).join("") + '</div>';
+    var selected = filters.find(function (f) { return f.key === tab; }) || filters[0];
+    var emptyKey = tab === "graded" ? "album.emptyGraded" : tab === "raw" ? "album.emptyRaw" : "album.emptyAll";
+    var content = selected.items.length
+      ? '<div class="slab-gallery">' + selected.items.map(function (c) { return albumCardTile(c, opts); }).join("") + '</div>'
+      : '<p class="empty">' + esc(tr(emptyKey)) + '</p>';
+    return tabs + '<div class="album-panel" id="album-results" role="tabpanel" aria-labelledby="album-filter-' + tab + '" data-album-panel="' + tab + '">' + content + '</div>';
   }
   function bindAlbumTabs() {
     var base = albumBaseHash();
     document.querySelectorAll("[data-album-tab]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var tab = btn.getAttribute("data-album-tab");
-        go(tab === "raw" ? base + "/non-gradate" : base);
+        go(tab === "raw" ? base + "/non-gradate" : tab === "graded" ? base + "/gradate" : base);
       });
     });
   }
@@ -1164,7 +1175,7 @@
       return html;
     }
     if (data.private && data.owner_view && !adminView) html += '<p class="dim">' + esc(tr("album.privateOwnerNote")) + "</p>";
-    html += albumSectionsHtml(cards, { public: true, tab: tab || "graded" });
+    html += albumSectionsHtml(cards, { public: true, tab: tab || "all" });
     if (adminView) html += adminAlbumToolsHtml(cards);
     return html;
   }
@@ -1530,8 +1541,7 @@
     var u = state.user;
     var items = [
       { href: "#/", label: tr("nav.home") },
-      { href: "#/galleria", label: tr("nav.gallery") },
-      { href: "#/giapponesi", label: tr("nav.japan") },
+      { href: "#/market", label: tr("nav.gallery") },
       { href: "#/album", label: tr("nav.collection") },
       { href: "#/commissioni", label: trx("nav.fees", "Commissioni e piani"), cls: "nav-fees" }
     ];
@@ -1613,7 +1623,7 @@
     };
     var tabs = [
       ["#/", "home", tr("nav.home")],
-      ["#/galleria", "gallery", tr("nav.gallery")],
+      ["#/market", "gallery", tr("nav.gallery")],
       ["#/album", "collection", tr("nav.collection")]
     ];
     if (state.user && state.user.role === "admin") tabs.push(["#/admin", "admin", tr("nav.admin")]);
@@ -1630,7 +1640,7 @@
       if (href === "#/") href = "/";
       var on = href === r.path || (href !== "/" && r.path.startsWith(href));
       if ((href === "/album" || href === "/collezione") && isAlbumPath(r.path)) on = true;
-      if (href === "/galleria" && (r.path === "/gradate" || r.path.startsWith("/gradate/") || r.path === "/non-gradate" || r.path.startsWith("/non-gradate/") || r.path === "/mercato")) on = true;
+      if (href === "/market" && (r.path === "/gradate" || r.path.startsWith("/gradate/") || r.path === "/non-gradate" || r.path.startsWith("/non-gradate/") || r.path === "/mercato")) on = true;
       a.classList.toggle("on", on);
       a.classList.toggle("active", on);
     });
@@ -1686,8 +1696,8 @@
       '<p class="games-line">' + tr("home.games") + "</p>" +
       '<p class="lede">' + tr("home.lede") + "</p>" +
       '<div class="hero-actions">' +
-      '<a class="btn primary" href="#/galleria/gradate" data-link>' + tr("home.ctaGraded") + "</a>" +
-      '<a class="btn ghost" href="#/galleria/non-gradate" data-link>' + tr("home.ctaUngraded") + "</a>" +
+      '<a class="btn primary" href="#/market/gradate" data-link>' + tr("home.ctaGraded") + "</a>" +
+      '<a class="btn ghost" href="#/market/non-gradate" data-link>' + tr("home.ctaUngraded") + "</a>" +
       (state.user ? '<a class="btn ghost" href="#/collezione" data-link>' + tr("home.ctaCollection") + "</a>" : '<a class="btn ghost" href="#/registrati" data-link>' + tr("home.ctaSignup") + "</a>") +
       "</div></div>" +
       '<div class="slab-stage hero-slab"><div class="hero-fan" data-hero-fan role="group" aria-label="' + esc(tr("home.fanAria")) + '">' +
@@ -1695,8 +1705,8 @@
       '</div><p class="hero-fan-hint">' + tr("home.fanHint") + "</p></div></section>" +
       '<div class="ticker-wrap" aria-hidden="true"><div class="ticker">' + ticker + "</div></div>" +
       '<section class="split">' +
-      '<a class="choice" href="#/galleria/gradate" data-link><h3>' + tr("home.choiceGraded.h") + "</h3><p>" + tr("home.choiceGraded.p") + '</p><span class="go">' + tr("home.choiceGraded.go") + "</span></a>" +
-      '<a class="choice" href="#/galleria/non-gradate" data-link><h3>' + tr("home.choiceRaw.h") + "</h3><p>" + tr("home.choiceRaw.p") + '</p><span class="go">' + tr("home.choiceRaw.go") + "</span></a>" +
+      '<a class="choice" href="#/market/gradate" data-link><h3>' + tr("home.choiceGraded.h") + "</h3><p>" + tr("home.choiceGraded.p") + '</p><span class="go">' + tr("home.choiceGraded.go") + "</span></a>" +
+      '<a class="choice" href="#/market/non-gradate" data-link><h3>' + tr("home.choiceRaw.h") + "</h3><p>" + tr("home.choiceRaw.p") + '</p><span class="go">' + tr("home.choiceRaw.go") + "</span></a>" +
       "</section>" +
       (window.DreaMintCert ? window.DreaMintCert.homeHowToHtml() : "") +
       rarityLadder() +
@@ -1771,22 +1781,115 @@
       "<p>" + esc(tr("card.needPaypal")) + "</p>" +
       '<a class="btn primary" href="#/account" data-link>' + esc(tr("card.addPaypal")) + "</a></div>";
   }
-  // Soft-archive UI for ungraded cards sold off-platform.
-  // Server flag: cfg.sold_outside_archive === true after Dev deploys POST /api/cards/:id/archive and migrate-v14.
-  function soldOutsideReady() {
-    return !!(state.cfg && state.cfg.sold_outside_archive);
-  }
-  function canOfferSoldOutside(c) {
-    if (!c || !c.is_ungraded || !state.user || c.archived_at) return false;
-    if (isActivelyListed(c)) return false;
-    return !!(c.can_list || c.can_edit_price || (c.physical_owner_id && c.physical_owner_id === state.user.id));
-  }
+  // Non gradata venduta fuori piattaforma: passaggio al compratore,
+  // NON archiviazione. Anche con un annuncio aperto il pulsante resta visibile,
+  // ma il server richiede che venga prima chiuso.
   function soldOutsideHtml(c) {
-    if (!canOfferSoldOutside(c)) return "";
-    return '<div class="sold-outside">' +
-      '<button type="button" class="btn ghost" id="sold-outside">' + esc(tr("card.soldOutside")) + "</button>" +
-      '<p class="dim">' + esc(tr("card.soldOutsideHint")) + "</p>" +
-      '<p class="error" id="sold-outside-err" hidden></p></div>';
+    if (!c || !c.is_ungraded || !isOwnCard(c) || c.archived_at ||
+        !["approved", "listed"].includes(c.status)) return "";
+    return '<div class="sold-outside raw-transfer-cta">' +
+      '<a class="btn secondary" href="#/trasferimento-non-gradata/' + encodeURIComponent(c.id) + '" data-link>' +
+      esc(tr("rawTransfer.open")) + '</a>' +
+      '<p class="dim">' + esc(tr("rawTransfer.openHint")) + '</p></div>';
+  }
+
+  function pageRawTransfer(items, preselectedId) {
+    var choices = (items || []).map(function (c) {
+      var label = (c.card_name || c.id) + ' · ' + (c.set_name || '') +
+        ' · ' + (c.code_printed || '') + (c.archived_at ? ' · ' + tr('rawTransfer.archived') : '');
+      return '<option value="' + esc(c.id) + '"' + (c.id === preselectedId ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
+    return '<section class="page-head"><div><h1>' + esc(tr('rawTransfer.title')) + '</h1>' +
+      '<p>' + esc(tr('rawTransfer.lede')) + '</p></div></section>' +
+      '<div class="raw-transfer-layout">' +
+      '<section class="panel" aria-labelledby="raw-transfer-sell-title"><h2 id="raw-transfer-sell-title">' + esc(tr('rawTransfer.sellerTitle')) + '</h2>' +
+      '<p class="dim">' + esc(tr('rawTransfer.sellerHint')) + '</p>' +
+      (choices ? '<form id="raw-transfer-create-form"><label class="field">' + esc(tr('rawTransfer.select')) +
+        '<select id="raw-transfer-card" name="card_id" required>' + choices + '</select></label>' +
+        '<p class="dim" id="raw-transfer-state" role="status"></p>' +
+        '<button type="submit" class="btn primary" id="raw-transfer-create">' + esc(tr('rawTransfer.generate')) + '</button></form>'
+        : '<p class="notice">' + esc(tr('rawTransfer.noCards')) + '</p>') +
+      '<div id="raw-transfer-code-box" class="raw-transfer-code" hidden>' +
+      '<p>' + esc(tr('rawTransfer.codeOnce')) + '</p><strong id="raw-transfer-code" class="transfer-code-value"></strong>' +
+      '<p class="dim" id="raw-transfer-expiration"></p><button type="button" class="btn ghost" id="raw-transfer-copy">' + esc(tr('rawTransfer.copy')) + '</button></div>' +
+      '<p class="error" id="raw-transfer-create-err" role="alert" hidden></p></section>' +
+      '<section class="panel" aria-labelledby="raw-transfer-buy-title"><h2 id="raw-transfer-buy-title">' + esc(tr('rawTransfer.buyerTitle')) + '</h2>' +
+      '<p class="dim">' + esc(tr('rawTransfer.buyerHint')) + '</p>' +
+      '<form id="raw-transfer-redeem-form"><label class="field">' + esc(tr('rawTransfer.codeLabel')) +
+      '<input name="code" id="raw-transfer-redeem-code" type="text" maxlength="36" placeholder="DMU-XXXXX-XXXXX-XXXXX-XXXXX" autocapitalize="characters" autocomplete="off" spellcheck="false" required></label>' +
+      '<button type="submit" class="btn primary" id="raw-transfer-redeem">' + esc(tr('rawTransfer.redeem')) + '</button></form>' +
+      '<p class="error" id="raw-transfer-redeem-err" role="alert" hidden></p>' +
+      '<div class="notice" id="raw-transfer-success" hidden></div></section></div>';
+  }
+
+  function bindRawTransfer(items) {
+    var form = document.getElementById('raw-transfer-create-form');
+    var selector = document.getElementById('raw-transfer-card');
+    var msg = document.getElementById('raw-transfer-state');
+    var err = document.getElementById('raw-transfer-create-err');
+    var codeBox = document.getElementById('raw-transfer-code-box');
+    var codeEl = document.getElementById('raw-transfer-code');
+    var expiryEl = document.getElementById('raw-transfer-expiration');
+    var button = document.getElementById('raw-transfer-create');
+    function describe() {
+      if (!selector) return;
+      var card = (items || []).find(function (x) { return x.id === selector.value; });
+      if (!card) return;
+      var locked = !!(card.listing_open || card.sale_open);
+      if (msg) msg.textContent = locked ? tr('rawTransfer.closeFirst') :
+        (card.code_valid ? tr('rawTransfer.replaceExisting') : tr('rawTransfer.ready'));
+      if (button) button.disabled = locked;
+      if (codeBox) codeBox.hidden = true;
+    }
+    if (selector) { selector.addEventListener('change', describe); describe(); }
+    if (form) form.addEventListener('submit', function (e) {
+      e.preventDefault(); if (!selector || button.disabled) return;
+      if (err) err.hidden = true;
+      if (codeBox) codeBox.hidden = true;
+      button.disabled = true;
+      api('cards/' + encodeURIComponent(selector.value) + '/ungraded-transfer-code', { method: 'POST', body: {} })
+        .then(function (d) {
+          if (codeEl) codeEl.textContent = d.code;
+          if (expiryEl) expiryEl.textContent = tr('rawTransfer.expires', { date: new Date(d.expires_at).toLocaleDateString(langIsEn() ? 'en-GB' : 'it-IT') });
+          if (codeBox) codeBox.hidden = false;
+          var card = (items || []).find(function (x) { return x.id === selector.value; });
+          if (card) card.code_valid = true;
+          if (msg) msg.textContent = tr('rawTransfer.replaceExisting');
+          button.disabled = false;
+        }).catch(function (e) {
+          button.disabled = false;
+          if (err) { err.hidden = false; err.textContent = e.message; }
+        });
+    });
+    var copy = document.getElementById('raw-transfer-copy');
+    if (copy) copy.onclick = function () {
+      if (codeEl && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(codeEl.textContent).then(function () { dmToast(tr('rawTransfer.copied')); })
+          .catch(function () { dmToast(tr('rawTransfer.selectCopy')); });
+      } else dmToast(tr('rawTransfer.selectCopy'));
+    };
+    var redeem = document.getElementById('raw-transfer-redeem-form');
+    if (redeem) redeem.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var send = redeem.querySelector('[type=submit]');
+      var rerr = document.getElementById('raw-transfer-redeem-err');
+      var success = document.getElementById('raw-transfer-success');
+      if (rerr) rerr.hidden = true;
+      if (success) success.hidden = true;
+      send.disabled = true;
+      api('ungraded-transfers/redeem', { method: 'POST', body: { code: redeem.elements.code.value } })
+        .then(function (d) {
+          redeem.reset();
+          if (success) {
+            success.hidden = false;
+            success.innerHTML = '<p>' + esc(tr('rawTransfer.success', { card: d.card_name || '' })) +
+              '</p><a class="btn secondary" href="#/carta/' + encodeURIComponent(d.card_id) + '" data-link>' +
+              esc(tr('rawTransfer.view')) + '</a>';
+          }
+        }).catch(function (e) {
+          if (rerr) { rerr.hidden = false; rerr.textContent = e.message; }
+        }).finally(function () { send.disabled = false; });
+    });
   }
 
   function pageAccount(pendingPaypal) {
@@ -1918,6 +2021,7 @@
     var tab = albumTabFromParts(route().parts, 1);
     var head = '<div class="page-head"><div><h1>' + tr("collection.title") + "</h1><p>" + tr("collection.lede") + "</p></div>" +
       '<div class="row-actions"><a class="btn primary" href="#/registra/gradate" data-link>' + tr("collection.addGraded") + '</a><a class="btn ghost" href="#/registra/non-gradate" data-link>' + tr("collection.addRaw") + "</a>" +
+      '<a class="btn ghost" href="#/trasferimento-non-gradata" data-link>' + esc(tr("rawTransfer.albumLink")) + "</a>" +
       (window.DreaMintCert ? window.DreaMintCert.collectionExtraLinks() : "") +
       "</div></div>";
     if (publicAlbumsOn()) {
@@ -2327,14 +2431,13 @@
       '<div class="lightbox" id="lightbox" hidden><button type="button" class="lightbox-close" aria-label="' + esc(tr("gal.close")) + '">×</button>' +
       '<img id="lb-img" alt="' + esc(tr("gal.full")) + '"></div></section>';
   }
-  // v31: la Galleria apre subito tutte le carte; Gradate/Non gradate sono filtri visivi.
+  // v32: il Market apre subito tutte le carte; Gradate/Non gradate sono filtri visivi.
   // Si riutilizza il board del marketplace per mantenere ricerca per TCG e ordinamento.
   function pageGallery(listings, initialSection) {
     listings = listings || [];
     var html = '<div class="page-head"><div><h1>' + esc(tr("gallery.title")) + '</h1><p>' + esc(tr("gallery.description")) + '</p></div>' +
       '<a class="btn primary" href="#/registra" data-link>' + esc(tr("gallery.sell")) + '</a></div>' +
-      '<p class="row-actions"><a class="btn ghost" href="#/giapponesi" data-link>' + esc(tr("nav.japan")) + '</a>' +
-      ' <a class="btn ghost" href="#/vendite" data-link>' + esc(tr("market.sales")) + '</a></p>';
+      '<p class="row-actions"><a class="btn ghost" href="#/vendite" data-link>' + esc(tr("market.sales")) + '</a></p>';
     if (window.DreaMintHome && window.DreaMintHome.marketBoard) {
       html += window.DreaMintHome.marketBoard(listings, {
         typeFilters: true,
@@ -2354,13 +2457,7 @@
         '<span><strong>' + esc(cardTitle(l)) + '</strong> · ' + esc(euros(l.price_cents)) + '</span></a>';
     }).join("") + '</div>';
   }
-  function japanTabsRow(raw) {
-    return '<div class="chip-row" role="navigation" aria-label="' + esc(tr("market.jp.h")) + '">' +
-      '<a class="chip' + (!raw ? " on" : "") + '" href="#/giapponesi" data-link>' + esc(tr("nav.graded")) + "</a>" +
-      '<a class="chip' + (raw ? " on" : "") + '" href="#/giapponesi/non-gradate" data-link>' + esc(tr("nav.ungraded")) + "</a></div>";
-  }
   function pageMarket(listings, section, tierFilter, condFilter, mopts) {
-    var jp = !!(mopts && mopts.lang === "JPN");
     var raw = section === "ungraded";
     condFilter = condFilter || "";
     var dateLabel = (state.cfg.launchPublicDateLabel && state.cfg.launchPublicDateLabel !== "Data di lancio pubblico: da annunciare")
@@ -2377,15 +2474,8 @@
         '<p class="notes">' + tr("market.graded.notes", { date: dateLabel, range: feeRangeText(state.cfg) }) + italyShipNote() + "</p>" +
         rarityFilterRow(tierFilter) +
         ((window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) ? window.DreaMintTradeV9.certSearchCompact() + window.DreaMintTradeV9.offerFilterRow(window.DreaMintTradeV9.activeOffer()) : "");
-    if (jp) {
-      // v28: sezione carte giapponesi: stesse schede del mercato, filtrate per lingua
-      html = '<div class="page-head"><div><h1>' + tr("market.jp.h") + "</h1><p>" + tr("market.jp.p") + "</p></div>" +
-        '<a class="btn primary" href="#/registra/' + (raw ? "non-gradate" : "gradate") + '" data-link>' + tr(raw ? "market.sell" : "market.register") + "</a></div>" +
-        japanTabsRow(raw) +
-        '<p class="notes">' + tr(raw ? "market.ungraded.notes" : "market.graded.notes", { date: dateLabel, range: feeRangeText(state.cfg) }) + italyShipNote() + "</p>";
-    }
     html += '<p class="row-actions"><a class="btn ghost" href="#/vendite" data-link>' + tr("market.sales") + "</a>" +
-      (jp ? "" : ' <a class="btn ghost" href="#/giapponesi" data-link>' + tr("nav.japan") + "</a>") + "</p>";
+      "</p>";
     if (!jp && !raw && window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) {
       listings = window.DreaMintTradeV9.filterByOffer(listings, window.DreaMintTradeV9.activeOffer());
     }
@@ -2401,7 +2491,7 @@
     }
     if (!listings.length) {
       // Empty state: no demo/placeholder cards (demo cards live only in the home hero).
-      var emptyMsg = jp ? tr("market.jp.empty") : raw ? tr("market.emptyRaw")
+      var emptyMsg = raw ? tr("market.emptyRaw")
         : (tierFilter && tierInfo(tierFilter)) ? tr("market.emptyTier", { tier: tierInfo(tierFilter).label })
         : tr("market.emptyGraded");
       var sellHref = raw ? "#/registra/non-gradate" : "#/registra/gradate";
@@ -3753,7 +3843,12 @@
         if (!p[1]) { $app.innerHTML = '<section class="panel"><h2>' + tr("register.choice") + '</h2><div class="row"><a class="btn primary" href="#/registra/gradate" data-link>' + tr("reg.titleGraded") + '</a><a class="btn" href="#/registra/non-gradate" data-link>' + tr("reg.titleRaw") + "</a></div></section>"; return; }
         $app.innerHTML = pageRegister(rawReg); bindRegister(); return;
       }
-      if (p[0] === "galleria") {
+      // Vecchi segnalibri continuano a funzionare dopo il cambio nome a Market.
+      if (p[0] === "galleria" || p[0] === "mercato") {
+        go("#/market" + (p.length > 1 ? "/" + p.slice(1).join("/") : ""));
+        return;
+      }
+      if (p[0] === "market") {
         document.title = tr("gallery.title") + " — DreaMint";
         $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';
         var initialType = p[1] === "gradate" ? "graded" : p[1] === "non-gradate" ? "raw" : "";
@@ -3765,17 +3860,13 @@
         return;
       }
       if (p[0] === "giapponesi") {
-        $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';
-        var jpSec = p[1] === "non-gradate" ? "ungraded" : "graded";
-        var jpRes = await api("market?section=" + jpSec + "&language=JPN");
-        $app.innerHTML = pageMarket(jpRes.listings || [], jpSec, "", "", { lang: "JPN" });
-        if (window.DreaMintHome && window.DreaMintHome.bindMarketBoard) window.DreaMintHome.bindMarketBoard($app);
-        if (window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) window.DreaMintTradeV9.decorateTiles($app);
+        // Vecchi segnalibri compatibili: le JPN non hanno più una sezione distinta.
+        go("#/market" + (p[1] === "non-gradate" ? "/non-gradate" : ""));
         return;
       }
       if (p[0] === "gradate" || p[0] === "non-gradate") {
         // Compatibilità con i vecchi link. I filtri specifici rarità/condizione restano attivi.
-        if (!p[1]) { go(p[0] === "gradate" ? "#/galleria/gradate" : "#/galleria/non-gradate"); return; }
+        if (!p[1]) { go(p[0] === "gradate" ? "#/market/gradate" : "#/market/non-gradate"); return; }
         $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';
         var sec = p[0] === "non-gradate" ? "ungraded" : "graded";
         var tierFilter = (sec === "graded" && tierInfo(p[1])) ? p[1] : "";
@@ -3805,6 +3896,14 @@
         } catch (pubErr) {
           $app.innerHTML = pagePublicProfile(null, pubErr, pubTab);
         }
+        return;
+      }
+      if (p[0] === "trasferimento-non-gradata") {
+        if (!state.user) { $app.innerHTML = pageAuth("login"); bindAuth("login"); return; }
+        $app.innerHTML = '<div class="skel" style="min-height:240px"></div>';
+        var transferable = await api("ungraded-transfers/eligible");
+        $app.innerHTML = pageRawTransfer(transferable.cards || [], p[1] || "");
+        bindRawTransfer(transferable.cards || []);
         return;
       }
       if (p[0] === "collezione" || p[0] === "album") {
@@ -3898,26 +3997,6 @@
         }
         bindRemoveCardButtons($app);
         bindCatalogEditor(one.card);
-        var so = document.getElementById("sold-outside");
-        if (so) so.onclick = function () {
-          var er = document.getElementById("sold-outside-err");
-          if (er) er.hidden = true;
-          if (!soldOutsideReady()) {
-            if (er) { er.hidden = false; er.textContent = tr("card.soldOutsideSoon"); }
-            else alert(tr("card.soldOutsideSoon"));
-            return;
-          }
-          if (!confirm(tr("card.soldOutsideConfirm"))) return;
-          so.disabled = true;
-          api("cards/" + one.card.id + "/archive", { method: "POST", body: { reason: "sold_outside" } })
-            .then(function () { dmToast(tr("card.soldOutsideOk")); go("#/album"); })
-            .catch(function (err) {
-              so.disabled = false;
-              var m = String(err && err.message || "");
-              if (er) { er.hidden = false; er.textContent = /404|not found|non trovata/i.test(m) ? tr("card.soldOutsideSoon") : m; }
-              else alert(m);
-            });
-        };
         var pf = document.getElementById("price-form");
         if (pf) pf.onsubmit = function (e) {
           e.preventDefault();
@@ -3999,7 +4078,6 @@
           return;
         }
       }
-      if (p[0] === "mercato") { go("#/galleria"); return; }
       if (p[0] === "annuncio" && p[1] && p[2]) {
         var m2 = await api("market?listing_id=" + encodeURIComponent(p[1]));
         var m2list = m2.listings || [];

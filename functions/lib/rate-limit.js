@@ -16,6 +16,7 @@ export const IP_RULES = [
   { name: "sale", test: (m, p) => m === "POST" && /^sales\//.test(p), limit: 120, windowSec: HOUR },
   { name: "me", test: (m, p) => m === "PATCH" && p === "me", limit: 20, windowSec: HOUR },
   { name: "copy", test: (m, p) => m === "POST" && (p === "copies/redeem" || p === "claims" || /^cards\/[^/]+\/transfer-code$/.test(p)), limit: 20, windowSec: HOUR },
+  { name: "rawxfer", test: (m, p) => m === "POST" && (p === "ungraded-transfers/redeem" || /^cards\/[^/]+\/ungraded-transfer-code$/.test(p)), limit: 12, windowSec: HOUR },
   { name: "certcode", test: (m, p) => m === "GET" && /^cards\/[^/]+\/certificate$/.test(p), limit: 120, windowSec: HOUR },
   { name: "verifymail", test: (m, p) => m === "POST" && p === "auth/resend-verification", limit: 10, windowSec: HOUR },
   { name: "verifylink", test: (m, p) => m === "GET" && p === "auth/verify-email", limit: 60, windowSec: HOUR },

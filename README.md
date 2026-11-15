@@ -6,6 +6,18 @@ Il progetto Cloudflare Pages si chiama **gemint-beta** e usa Functions, D1 e KV.
 
 Oggi il sito è in **beta gratuita, senza commissioni**. I pagamenti avvengono **direttamente tra le persone tramite PayPal** (Beni e servizi / WPS): DreaMint non tiene mai i soldi e non intermedia il pagamento. In chat e negli annunci va ricordato di chiudere la trattativa sul sito e di pagare con PayPal Beni e servizi: fuori dal sito si perdono la protezione acquisti PayPal, lo storico della chat e la possibilità di segnalare l’utente.
 
+## Novità v32: Market e Album
+
+La sezione delle vendite si chiama **Market** (`#/market`) e continua a offrire filtri. I vecchi link `#/galleria` rimangono validi. L'**Album** invece parte dal filtro **Tutte** e include subito gradate e non gradate, senza percorso separato per lingua giapponese.
+
+## Novità v32: trasferimento delle non gradate vendute fuori DreaMint
+
+Se una **non gradata** è stata venduta esternamente, il venditore apre l'Album oppure la scheda della carta e sceglie «Trasferisci / riscatta non gradata». Seleziona la carta e genera un **codice monouso** da consegnare all'acquirente. L'acquirente entra nel proprio account e riscatta il codice: la stessa registrazione (foto e dati) passa al suo album; non si elimina la carta e non si genera una vendita PayPal.
+
+L'annuncio DreaMint e le vendite aperte vanno chiusi prima della generazione/riscatto. Funziona anche per le carte già archiviate in precedenza come `sold_outside`. I codici scadono in 30 giorni, sono rigenerabili dal venditore e sono mostrati in chiaro una sola volta. Serve la **migrazione `migrate-v32.sql`** prima di usare il nuovo flusso. I codici di trasferimento delle carte gradate sono **separati** e non vengono modificati.
+
+Questa v32 include le modifiche v30 (offerte) e v31 (Galleria unificata), ma **uno ZIP scaricato non aggiorna automaticamente il sito online**: per vederle su dreamint.it occorre pubblicare i file e applicare le migrazioni con backup, dopo approvazione esplicita.
+
 ## Struttura della cartella
 
 ```

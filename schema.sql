@@ -423,3 +423,13 @@ CREATE INDEX IF NOT EXISTS idx_price_offers_seller ON price_offers(seller_id, cr
 CREATE INDEX IF NOT EXISTS idx_price_offers_buyer ON price_offers(buyer_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_price_offers_buyer_open ON price_offers(listing_id, buyer_id)
   WHERE status IN ('pending','accepted');
+
+-- v32: trasferimento volontario monouso delle non gradate vendute fuori piattaforma.
+CREATE TABLE IF NOT EXISTS ungraded_transfer_codes (
+  slab_id TEXT PRIMARY KEY NOT NULL,
+  owner_id TEXT NOT NULL,
+  code_hash TEXT UNIQUE NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_raw_transfer_owner ON ungraded_transfer_codes(owner_id);

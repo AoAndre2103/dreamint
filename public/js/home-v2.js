@@ -53,7 +53,7 @@
       '<h1 id="h2-title" class="h2-title">' + esc(tr("h2.title1")) + " <em>" + esc(tr("h2.title2")) + "</em></h1>" +
       '<p class="h2-lede">' + esc(tr("h2.lede")) + "</p>" +
       '<div class="h2-ctas">' +
-      '<a class="btn primary" href="#/galleria" data-link>' + esc(tr("h2.ctaMarket")) + "</a>" +
+      '<a class="btn primary" href="#/market" data-link>' + esc(tr("h2.ctaMarket")) + "</a>" +
       '<a class="btn secondary" href="#/registra" data-link>' + esc(tr("h2.ctaSell")) + "</a>" +
       '<a class="btn ghost" href="' + (u ? "#/collezione" : "#/registrati") + '" data-link>' + esc(tr("h2.ctaCollect")) + "</a>" +
       "</div>" +
@@ -97,11 +97,11 @@
       '<p class="uni-tag">' + esc(tr("u.phys.tag")) + "</p><h3>" + esc(tr("u.phys.h")) + "</h3><p>" + esc(tr("u.phys.p")) + "</p>" +
       "<ul>" + li("u.phys.l1") + li("u.phys.l2") + li("u.phys.l3") +
       '<li class="is-soon">' + esc(tr("u.phys.soon1")) + " " + soon() + '</li><li class="is-soon">' + esc(tr("u.phys.soon2")) + " " + soon() + "</li></ul>" +
-      '<a class="btn secondary" href="#/galleria/non-gradate" data-link>' + esc(tr("u.phys.go")) + "</a></article>" +
+      '<a class="btn secondary" href="#/market/non-gradate" data-link>' + esc(tr("u.phys.go")) + "</a></article>" +
       '<article class="uni uni-dig"><div class="uni-ico" aria-hidden="true">' + icoGem() + "</div>" +
       '<p class="uni-tag">' + esc(tr("u.dig.tag")) + "</p><h3>" + esc(tr("u.dig.h")) + "</h3><p>" + esc(tr("u.dig.p")) + "</p>" +
       "<ul>" + li("u.dig.l1") + li("u.dig.l2") + li("u.dig.l3") + "</ul>" +
-      '<a class="btn secondary" href="#/galleria/gradate" data-link>' + esc(tr("u.dig.go")) + "</a></article>" +
+      '<a class="btn secondary" href="#/market/gradate" data-link>' + esc(tr("u.dig.go")) + "</a></article>" +
       "</div></section>";
   }
   function icoBox() { return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></svg>'; }
@@ -192,7 +192,7 @@
       marketBoard(listings, { home: true, limit: 8, recent: recent || [], certified: null,
         titleHtml: kicker("mp.kicker") + '<h2 id="mk-t" class="h2-h">' + esc(tr("mp.title")) + "</h2>",
         emptyHtml: body }) +
-      (listings.length ? '<p class="h2-actions"><a class="btn secondary" href="#/galleria" data-link>' + esc(tr("mp.seeAll")) + "</a></p>" : "") +
+      (listings.length ? '<p class="h2-actions"><a class="btn secondary" href="#/market" data-link>' + esc(tr("mp.seeAll")) + "</a></p>" : "") +
       "</section>";
   }
   // Clean empty state (no fake/placeholder cards): message + "Vendi una carta" CTA.

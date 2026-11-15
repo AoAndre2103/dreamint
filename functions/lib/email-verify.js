@@ -33,6 +33,7 @@ export function requiresVerifiedEmail(method, path) {
     if (/^sales\/[^/]+\/(accept|ship|receive|mark-paid)$/.test(p)) return true;
     if (/^sales\/[^/]+\/paypal\/(order|capture)$/.test(p)) return true;
     if (p === "copies/redeem" || p === "claims") return true;
+    if (p === "ungraded-transfers/redeem" || /^cards\/[^/]+\/ungraded-transfer-code$/.test(p)) return true;
     if (/^cards\/[^/]+\/transfer-code$/.test(p)) return true;
   }
   if (m === "PATCH") {

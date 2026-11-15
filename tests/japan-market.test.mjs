@@ -81,15 +81,14 @@ dbTest("market: lingue valide filtrano, lingue inventate danno 400, senza filtro
   assert.equal((await market(env, "?section=graded")).body.listings.length, 2);
 });
 
-test("pagina: rotta #/giapponesi, voce nel menu e nel footer, testi in italiano e inglese, nessuna promessa di valore", () => {
+test("carte giapponesi: nessuna sezione o pulsante separato, vecchi link aprono Market", () => {
   const app = read("public/app.js"), i18n = read("public/js/i18n.js"), strings = read("public/js/strings-v2.js"), html = read("public/index.html");
-  assert.ok(/p\[0\] === "giapponesi"/.test(app) && /market\?section=" \+ jpSec \+ "&language=JPN"/.test(app));
-  assert.ok(/href: "#\/giapponesi"/.test(app), "manca la voce nel menu");
-  assert.ok(/href="#\/giapponesi" data-i18n="f\.japan"/.test(html), "manca la voce nel footer");
-  for (const k of ["nav.japan", "market.jp.h", "market.jp.p", "market.jp.empty"]) {
-    assert.equal((i18n.match(new RegExp('"' + k.replace(".", "\\.") + '":', "g")) || []).length, 2, k + " deve esistere in IT e EN");
-  }
-  assert.equal((strings.match(/"f\.japan":/g) || []).length, 2);
-  const texts = (i18n.match(/"market\.jp\.p": "[^"]*"/g) || []).join(" ");
-  assert.ok(!/valore|invest|rivalut|guadagn|value|invest|profit/i.test(texts), "niente promesse di valore o di investimento (Termini §8)");
+  // La lingua JPN è metadato di carta: non è più una categoria obbligatoria di navigazione.
+  assert.match(app, /if \(p\[0\] === "giapponesi"\)/);
+  assert.match(app, /go\("#\/market" \+ \(p\[1\] === "non-gradate"/);
+  assert.doesNotMatch(app, /href: "#\/giapponesi"/);
+  assert.doesNotMatch(html, /href="#\/giapponesi"/);
+  assert.equal((i18n.match(/"nav.gallery": "Market"/g) || []).length, 2);
+  // Traduzioni storiche possono restare come compatibilità, ma non sono voci visibili.
+  assert.ok(strings.includes('"f.japan"'));
 });

@@ -49,19 +49,19 @@ test('galleria: un link prefiltrato è solo una selezione iniziale modificabile'
   assert.match(home, /apply\(\); \/\/ all'apertura/);
 });
 
-test('galleria: menu desktop/mobile, footer e homepage aprono la pagina unica', () => {
-  assert.match(app, /\{ href: "#\/galleria", label: tr\("nav\.gallery"\) \}/);
-  assert.match(app, /\["#\/galleria", "gallery", tr\("nav\.gallery"\)\]/);
-  assert.match(html, /href="#\/galleria" data-i18n="nav\.gallery"/);
-  assert.match(home, /href="#\/galleria" data-link>/);
-  assert.match(app, /if \(p\[0\] === "galleria"\)/);
+test('Market: menu desktop/mobile, footer e homepage aprono la pagina unica', () => {
+  assert.match(app, /\{ href: "#\/market", label: tr\("nav\.gallery"\) \}/);
+  assert.match(app, /\["#\/market", "gallery", tr\("nav\.gallery"\)\]/);
+  assert.match(html, /href="#\/market" data-i18n="nav\.gallery"/);
+  assert.match(home, /href="#\/market" data-link>/);
+  assert.match(app, /if \(p\[0\] === "market"\)/);
   assert.match(app, /var galData = await api\("market"\);/);
   assert.match(app, /pageGallery\(galData\.listings \|\| \[\], initialType\)/);
   assert.match(app, /bindMarketBoard\(\$app\)/);
   assert.match(app, /if \(!p\[1\]\) \{ go\(p\[0\] === "gradate"/);
 });
 
-test('galleria: traduzioni italiane e inglesi, nessun cambiamento ai dati delle offerte', () => {
+test('Market: traduzioni italiane e inglesi, nessun cambiamento ai dati delle offerte', () => {
   for (const key of ['nav.gallery', 'gallery.title', 'gallery.description', 'gallery.sell', 'gallery.empty']) {
     const hits = [...i18n.matchAll(new RegExp('"' + key.replaceAll('.', '\\.') + '":', 'g'))];
     assert.equal(hits.length, 2, key + ' deve esistere in italiano e inglese');

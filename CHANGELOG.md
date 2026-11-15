@@ -10,6 +10,25 @@
 
 Storia ricavata dal codice, dalle migrazioni e dal lavoro recente sul frontend. Le versioni del server (v13–v21) coincidono con i file `migrate-vN.sql`. Il frontend in questo albero è la v9b, con estrazione reveal-v2 revisione rv3.
 
+## v32 — 2026-11-15 — Market e Album (locale, NON pubblicata)
+
+- **Galleria** rinominata **Market** in italiano e inglese, nei menu desktop/mobile, nella home e nel footer. Percorso principale `#/market`; i vecchi collegamenti `#/galleria`, `#/mercato` e i relativi filtri rimangono compatibili tramite reindirizzamento.
+- La distinzione ora è esplicita: **Market** raccoglie gli annunci in vendita e mantiene i propri filtri; **Album** mostra inizialmente **Tutte** le carte personali e pubbliche, gradate e non gradate, senza filtro lingua separato per JPN.
+- Conservato il trasferimento delle non gradate vendute fuori DreaMint tramite codice monouso. È necessaria `migrate-v32.sql` quando si pubblica la funzione.
+- Nessun intervento su sito o database di produzione. Asset versionati per evitare versioni vecchie nel browser.
+
+## v32 — 2026-11-15 — Trasferimento non gradate vendute fuori piattaforma (locale, NON pubblicata)
+
+- Dall'**Album → Trasferisci / riscatta non gradata** o dal dettaglio di una carta propria si sceglie la non gradata venduta fuori DreaMint e si genera un **codice monouso** (`DMU-XXXXX-XXXXX-XXXXX-XXXXX`).
+- Il codice è mostrato una sola volta al venditore (20 caratteri casuali, 100 bit di entropia); nel database è memorizzato solo l'hash SHA-256. Scade in 30 giorni; rigenerarlo invalida il precedente.
+- L'acquirente accede con il proprio account con email verificata e riscatta il codice dalla stessa pagina: la **registrazione esistente** passa dal vecchio al nuovo album, con **foto fronte/retro e modello TCGdex invariati**. Non si crea una nuova carta e non viene simulato alcun pagamento.
+- L'operazione conserva la cronologia proprietari e l'audit. Il prezzo richiesto viene azzerato e la carta torna allo stato `approved` senza un annuncio di vendita del nuovo proprietario. Codici usati non sono riutilizzabili.
+- Blocco server in presenza di annunci (`active`, `reserved`, `paused`) o vendite (`requested`, `accepted`, `paid`, `shipped`) in corso. La carta deve essere non gradata, approvata, appartenere al venditore; sono supportate anche le non gradate **già archiviate con motivo `sold_outside`** (ma non quelle eliminate volontariamente).
+- Nuova tabella `ungraded_transfer_codes` (`migrate-v32.sql`) con applicazione assistita da `DEPLOY.sh`, rate limit e verifica email. API `GET /api/ungraded-transfers/eligible`, `POST /api/cards/:id/ungraded-transfer-code`, `POST /api/ungraded-transfers/redeem`.
+- La vecchia azione «Ho venduto fuori DreaMint» ora conduce al **trasferimento** anziché limitarsi a togliere la carta dall'album. Il vecchio endpoint di archiviazione resta compatibile ma non è più l'azione primaria.
+- Il caricamento della v31 Galleria è incluso. Versioni asset sincronizzate per `app.js`, `strings-v2.js`, `v2-theme.css`; aggiornati anche `i18n.js` e `styles.css` per limitare i file obsoleti in cache.
+- Test reali API Node/SQLite su riscatto, permessi, codici scaduti, uso singolo, trasferimento da archivio, annunci/vendite e collegamento album. Nessun database di produzione o sito online modificato.
+
 ## v31 — 2026-11-15 — Galleria unificata (locale, NON pubblicata)
 
 - Nuova voce **Galleria** nel menu desktop/mobile e nel footer (`#/galleria`), con caricamento immediato degli annunci gradati e non gradati nella stessa griglia.
