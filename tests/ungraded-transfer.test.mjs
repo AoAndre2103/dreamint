@@ -109,6 +109,21 @@ dbTest('vendita esterna: generazione, riscatto e passaggio effettivo nell’albu
   assert.equal((await call(env, 'GET', 'cards/gengar', 'buyer')).body.card.photos.front, true);
 });
 
+dbTest('due riscatti concorrenti di non gradata con annuncio aperto chiudono una sola volta', async () => {
+  const {db,env} = setup(); addCard(db);
+  insert(db,'listings',{id:'concurrent',slab_id:'gengar',seller_id:'seller',price_cents:15000,status:'active',created_at:iso(Date.now())});
+  const created=await call(env,'POST','cards/gengar/ungraded-transfer-code','seller',{});
+  assert.equal(created.status,200);
+  const outcomes=await Promise.all([
+    call(env,'POST','ungraded-transfers/redeem','buyer',{code:created.body.code}),
+    call(env,'POST','ungraded-transfers/redeem','stranger',{code:created.body.code})
+  ]);
+  assert.equal(outcomes.filter(x=>x.status===200).length,1,JSON.stringify(outcomes));
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='concurrent'").get().status,'closed');
+  assert.equal(db.prepare("SELECT count(*) n FROM slab_owner_history WHERE slab_id='gengar'").get().n,1);
+  assert.ok(['buyer','stranger'].includes(db.prepare("SELECT physical_owner_id FROM slabs WHERE id='gengar'").get().physical_owner_id));
+});
+
 dbTest('rigenerare il codice invalida quello precedente', async () => {
   const {db,env} = setup(); addCard(db);
   const one = await call(env, 'POST', 'cards/gengar/ungraded-transfer-code', 'seller', {});
@@ -133,17 +148,40 @@ dbTest('sicurezza: autenticazione, CSRF, verifica email, proprietario, gradate e
   assert.equal((await call(env, 'POST', 'ungraded-transfers/redeem', 'seller', {code:made.body.code})).status, 409);
 });
 
-dbTest('annuncio aperto e vendite in corso impediscono generazione o riscatto', async () => {
+dbTest('non gradata: annuncio resta in vendita fino al riscatto; si chiude nello stesso batch', async () => {
   const {db,env} = setup(); addCard(db);
-  const code = (await call(env, 'POST', 'cards/gengar/ungraded-transfer-code','seller',{})).body.code;
   insert(db,'listings',{id:'listing',slab_id:'gengar',seller_id:'seller',price_cents:15000,status:'active',created_at:iso(Date.now())});
+  insert(db,'price_offers',{id:'offer',listing_id:'listing',slab_id:'gengar',seller_id:'seller',buyer_id:'stranger',offer_cents:12500,status:'pending',created_at:iso(Date.now()),updated_at:iso(Date.now())});
+  const code=(await call(env,'POST','cards/gengar/ungraded-transfer-code','seller',{}));
+  assert.equal(code.status,200,JSON.stringify(code.body));
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='listing'").get().status,'active');
+  assert.equal(db.prepare("SELECT status FROM price_offers WHERE id='offer'").get().status,'pending');
+  assert.equal((await call(env,'POST','ungraded-transfers/redeem','buyer',{code:'DMU-AAAAA-AAAAA-AAAAA-AAAAA'})).status,400);
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='listing'").get().status,'active');
+  const done=await call(env,'POST','ungraded-transfers/redeem','buyer',{code:code.body.code});
+  assert.equal(done.status,200,JSON.stringify(done.body));
+  assert.equal(done.body.listing_closed,1);
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='listing'").get().status,'closed');
+  assert.equal(db.prepare("SELECT status FROM price_offers WHERE id='offer'").get().status,'cancelled');
+  assert.equal(db.prepare("SELECT physical_owner_id FROM slabs WHERE id='gengar'").get().physical_owner_id,'buyer');
+  assert.equal((await call(env,'POST','ungraded-transfers/redeem','stranger',{code:code.body.code})).status,400);
+  assert.equal(db.prepare("SELECT count(*) n FROM slab_owner_history WHERE slab_id='gengar'").get().n,1);
+});
+
+dbTest('non gradata: richiesta di acquisto o pagamento attivo bloccano generazione e riscatto senza chiudere annuncio', async () => {
+  const {db,env} = setup(); addCard(db);
+  insert(db,'listings',{id:'listing',slab_id:'gengar',seller_id:'seller',price_cents:15000,status:'active',created_at:iso(Date.now())});
+  const code=(await call(env,'POST','cards/gengar/ungraded-transfer-code','seller',{})).body.code;
+  insert(db,'sales',{id:'sale',listing_id:'listing',slab_id:'gengar',seller_id:'seller',buyer_id:'stranger',price_cents:15000,status:'requested',created_at:iso(Date.now())});
   assert.equal((await call(env,'POST','cards/gengar/ungraded-transfer-code','seller',{})).status,409);
   assert.equal((await call(env,'POST','ungraded-transfers/redeem','buyer',{code})).status,409);
-  db.prepare("UPDATE listings SET status='closed' WHERE id='listing'").run();
-  insert(db,'sales',{id:'sale',listing_id:'listing',slab_id:'gengar',seller_id:'seller',buyer_id:'buyer',price_cents:15000,status:'paid',created_at:iso(Date.now())});
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='listing'").get().status,'active');
+  assert.equal(db.prepare("SELECT physical_owner_id FROM slabs WHERE id='gengar'").get().physical_owner_id,'seller');
+  db.prepare("UPDATE sales SET status='paid' WHERE id='sale'").run();
   assert.equal((await call(env,'POST','ungraded-transfers/redeem','buyer',{code})).status,409);
   db.prepare("UPDATE sales SET status='cancelled' WHERE id='sale'").run();
   assert.equal((await call(env,'POST','ungraded-transfers/redeem','buyer',{code})).status,200);
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='listing'").get().status,'closed');
 });
 
 dbTest('non gradata già archiviata come venduta fuori può passare al compratore', async () => {
@@ -177,4 +215,22 @@ test('UI: accessibile dall’album e dalla scheda non gradata, con generazione e
   assert.match(deploy,/migrate-v32\.sql/);
   for (const key of ['rawTransfer.title','rawTransfer.redeem','rawTransfer.generate','rawTransfer.success'])
     assert.equal((lang.match(new RegExp('"'+key.replace('.','\\.')+'":','g'))||[]).length,2,key);
+});
+
+dbTest('caso reale: vendo fuori, genero il codice e l’annuncio si chiude soltanto quando l’acquirente lo usa', async () => {
+  const { db, env } = setup(); addCard(db);
+  insert(db, 'listings', { id: 'sale-outside-listing', slab_id: 'gengar', seller_id: 'seller',
+    price_cents: 12000, status: 'active', created_at: iso(Date.now()) });
+  const eligible = await call(env, 'GET', 'ungraded-transfers/eligible', 'seller');
+  assert.equal(eligible.status,200);
+  assert.equal(eligible.body.cards[0].listing_open,true);
+  const created = await call(env, 'POST', 'cards/gengar/ungraded-transfer-code', 'seller', {});
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='sale-outside-listing'").get().status,'active');
+  const done = await call(env, 'POST', 'ungraded-transfers/redeem', 'buyer', {code:created.body.code});
+  assert.equal(done.status,200,JSON.stringify(done.body));
+  assert.equal(db.prepare("SELECT status FROM listings WHERE id='sale-outside-listing'").get().status,'closed');
+  assert.equal(db.prepare("SELECT physical_owner_id, archived_at FROM slabs WHERE id='gengar'").get().physical_owner_id,'buyer');
+  assert.equal(db.prepare("SELECT archived_at FROM slabs WHERE id='gengar'").get().archived_at,null);
+  assert.equal((await call(env,'POST','ungraded-transfers/redeem','stranger',{code:created.body.code})).status,400);
 });

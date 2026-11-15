@@ -218,9 +218,14 @@ export function transferCodeRotateStmts(env, slabId, rotation, guardSql, guardBi
   ];
 }
 
-async function rotateTransferCode(env, slabId) {
+async function rotateTransferCode(env, slabId, ownerId = null) {
   const rotation = await makeTransferCode();
-  await env.DB.batch(transferCodeRotateStmts(env, slabId, rotation));
+  const stmts = transferCodeRotateStmts(env, slabId, rotation,
+    ownerId ? "digital_owner_id = ? AND physical_owner_id = digital_owner_id AND archived_at IS NULL AND status IN ('approved','listed') AND NOT EXISTS (SELECT 1 FROM sales WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped'))" : null,
+    ownerId ? [ownerId, slabId] : []);
+  const out = await env.DB.batch(stmts);
+  // An old owner must never rotate the code after a concurrent change of ownership.
+  if (ownerId && !(out[0].meta && out[0].meta.changes === 1)) throw transferLockedError();
   return rotation.code;
 }
 
@@ -271,48 +276,78 @@ async function recordAttempt(env, userId, success) {
   ).bind(crypto.randomUUID(), userId, nowIso(), success ? 1 : 0).run();
 }
 
-async function openSaleOnSlab(env, slabId) {
+// A transfer may coexist with a live listing until redemption, but cannot bypass
+// an open marketplace sale/order. The guards are repeated transactionally.
+async function openTradeOnSlab(env, slabId) {
   return env.DB.prepare(
-    `SELECT id, status FROM sales
-     WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped')
-     LIMIT 1`
-  ).bind(slabId).first();
+    `SELECT
+      EXISTS (SELECT 1 FROM listings WHERE slab_id = ? AND status IN ('active','reserved','paused')) AS listings,
+      EXISTS (SELECT 1 FROM sales WHERE slab_id = ? AND status IN ('requested','accepted','paid','shipped')) AS sales`
+  ).bind(slabId, slabId).first();
 }
 
-async function transferDigitalCopy(env, slab, newOwnerId, actorId, audit, reason) {
-  if (!hasDigitalCopy(slab)) throw Object.assign(new Error("Questa carta non ha una copia digitale"), { status: 400 });
+function transferLockedError() {
+  return Object.assign(new Error("Trasferimento sospeso: c’è una vendita o richiesta d’acquisto in corso. Risolvila prima di usare il codice."), { status: 409 });
+}
+
+async function transferDigitalCopy(env, slab, newOwnerId, actorId, audit, reason, expectedHash = null) {
+  if (!hasDigitalCopy(slab)) throw Object.assign(new Error("Questa carta non ha una copia digitale attiva"), { status: 400 });
   if (slab.digital_owner_id === newOwnerId) {
-    throw Object.assign(new Error("La copia è già tua"), { status: 400 });
+    throw Object.assign(new Error("La copia è già tua"), { status: 409 });
   }
-  const openSale = await openSaleOnSlab(env, slab.id);
-  if (openSale) {
-    throw Object.assign(new Error("C’è una vendita in corso su questa carta. Va chiusa prima del trasferimento."), { status: 409 });
+  const open = await openTradeOnSlab(env, slab.id);
+  if ((open && open.sales) || slab.archived_at || !['approved','listed'].includes(slab.status) || slab.physical_owner_id !== slab.digital_owner_id) {
+    throw transferLockedError();
   }
   const rotation = await makeTransferCode();
-  const at = new Date().toISOString();
-  await env.DB.batch([
+  const at = rotation.at;
+  // Single conditional update + conditional reveal/history in one D1 transaction:
+  // an old code cannot transfer twice, even if the second request read the old slab
+  // before the first request finished. Admin-approved photo claims use the same owner
+  // guard, but do not require a transfer code.
+  const hashGuard = expectedHash ? ' AND transfer_code_hash = ?' : '';
+  const out = await env.DB.batch([
     env.DB.prepare(
-      "UPDATE listings SET status = 'cancelled' WHERE slab_id = ? AND status IN ('active','reserved','paused')"
-    ).bind(slab.id),
+      `UPDATE slabs SET digital_owner_id = ?, physical_owner_id = ?, status = 'approved',
+         asking_price_cents = NULL, price_digital_cents = NULL, price_physical_cents = NULL,
+         transfer_code_hash = ?, transfer_code_created_at = ?
+       WHERE id = ? AND digital_owner_id = ? AND is_ungraded = 0
+         AND rarity_tier IS NOT NULL AND serial_number IS NOT NULL
+         AND status IN ('approved','listed') AND archived_at IS NULL
+         AND physical_owner_id = digital_owner_id
+         AND NOT EXISTS (SELECT 1 FROM sales sa WHERE sa.slab_id = slabs.id AND sa.status IN ('requested','accepted','paid','shipped'))${hashGuard}`
+    ).bind(newOwnerId, newOwnerId, rotation.hash, at, slab.id, slab.digital_owner_id,
+      ...(expectedHash ? [expectedHash] : [])),
     env.DB.prepare(
-      `UPDATE slabs
-       SET digital_owner_id = ?, physical_owner_id = ?, status = 'approved', price_digital_cents = NULL, price_physical_cents = NULL
-       WHERE id = ?`
-    ).bind(newOwnerId, newOwnerId, slab.id),
-    // Rotate in the same batch, after the owner columns so the reveal belongs to the new digital owner.
-    ...transferCodeRotateStmts(env, slab.id, rotation),
-    // v17: ownership history for the transfer-code path too (whole card: physical + digital).
+      `INSERT OR REPLACE INTO transfer_code_reveals (slab_id, user_id, code, created_at)
+       SELECT ?, ?, ?, ? WHERE EXISTS
+         (SELECT 1 FROM slabs WHERE id = ? AND digital_owner_id = ? AND transfer_code_hash = ?)`
+    ).bind(slab.id, newOwnerId, rotation.code, at, slab.id, newOwnerId, rotation.hash),
     env.DB.prepare(
       `INSERT INTO slab_owner_history (id, slab_id, from_user_id, to_user_id, reason, sale_id, created_at, part)
-       VALUES (?, ?, ?, ?, ?, NULL, ?, 'fullset')`
-    ).bind(crypto.randomUUID(), slab.id, slab.digital_owner_id || null, newOwnerId, "transfer_" + String(reason || "code").slice(0, 20), at)
+       SELECT ?, ?, ?, ?, ?, NULL, ?, 'fullset' WHERE EXISTS
+         (SELECT 1 FROM slabs WHERE id = ? AND digital_owner_id = ? AND transfer_code_hash = ?)`
+    ).bind(crypto.randomUUID(), slab.id, slab.digital_owner_id || null, newOwnerId,
+      'transfer_' + String(reason || 'code').slice(0, 20), at, slab.id, newOwnerId, rotation.hash),
+    env.DB.prepare(
+      `UPDATE listings SET status = 'closed', paused_by_sale_id = NULL, reserved_sale_id = NULL
+       WHERE slab_id = ? AND status IN ('active','reserved','paused')
+         AND EXISTS (SELECT 1 FROM slabs s WHERE s.id = ? AND s.digital_owner_id = ? AND s.transfer_code_hash = ?)`
+    ).bind(slab.id, slab.id, newOwnerId, rotation.hash),
+    env.DB.prepare(
+      `UPDATE price_offers SET status = 'cancelled', updated_at = ?
+       WHERE slab_id = ? AND status IN ('pending','accepted')
+         AND EXISTS (SELECT 1 FROM slabs s WHERE s.id = ? AND s.digital_owner_id = ? AND s.transfer_code_hash = ?)`
+    ).bind(at, slab.id, slab.id, newOwnerId, rotation.hash)
   ]);
+  if (!(out[0].meta && out[0].meta.changes === 1)) throw transferLockedError();
   if (audit) {
-    await audit(env, actorId, "digital_copy_transfer", "slab", slab.id, {
-      from: slab.digital_owner_id,
-      to: newOwnerId,
-      reason: reason || "code"
-    });
+    // A logging failure must not turn a completed transfer into a client error.
+    try {
+      await audit(env, actorId, 'digital_copy_transfer', 'slab', slab.id, {
+        from: slab.digital_owner_id, to: newOwnerId, reason: reason || 'code'
+      });
+    } catch (e) { console.log('transfer audit failed', e && e.message); }
   }
   return rotation.code;
 }
@@ -405,7 +440,9 @@ export async function issueCertificateForSlab(env, request, slabId, helpers, opt
   const copy = presentPublicCopy(slab, request);
   copy.owner_name = slab.digital_owner_name || copy.owner_name;
   const to = options.to || slab.digital_owner_email;
-  const mailed = await emailCertificate(helpers, env, request, to, copy, code);
+  let mailed;
+  try { mailed = await emailCertificate(helpers, env, request, to, copy, code); }
+  catch (e) { console.log('certificate notification failed', e && e.message); mailed = { ok: false }; }
   if (helpers && helpers.audit) {
     await helpers.audit(env, options.actorId || null, "issue_certificate", "slab", slab.id, {
       emailed: !!(mailed && mailed.ok),
@@ -610,9 +647,13 @@ async function getCertificate(request, env, id, url, helpers, J) {
       issuedCode = issued && issued.code || null;
     }
   }
+  const trade = isDigitalOwner ? await openTradeOnSlab(env, slab.id) : null;
+  const transferLocked = !!(trade && trade.sales) || (slab.physical_owner_id !== slab.digital_owner_id);
   return J({
     certificate: {
       ...copy,
+      can_regenerate: !!(isDigitalOwner && !transferLocked && !slab.archived_at && ['approved','listed'].includes(slab.status)),
+      transfer_locked: transferLocked,
       minted_at: slab.assigned_at,
       minted_at_label: formatRomeDate(slab.assigned_at),
       has_transfer_code: !!(slab.transfer_code_hash || issuedCode),
@@ -627,12 +668,17 @@ async function regenerateCode(request, env, id, helpers, J) {
   const user = await helpers.requireUser(request, env);
   const slab = await loadCopyRow(env, id);
   if (!hasDigitalCopy(slab) || isHiddenTest(slab, user)) return J({ error: "Certificato non disponibile" }, 404);
-  if (user.id !== slab.digital_owner_id && user.role !== "admin") {
+  if (user.id !== slab.digital_owner_id) {
     return J({ error: "Solo il proprietario della copia può generare un nuovo codice" }, 403);
   }
-  const code = await rotateTransferCode(env, slab.id);
+  const open = await openTradeOnSlab(env, slab.id);
+  if ((open && open.sales) || slab.archived_at || !['approved','listed'].includes(slab.status) || slab.physical_owner_id !== slab.digital_owner_id) {
+    return J({ error: transferLockedError().message, code: 'transfer_locked' }, 409);
+  }
+  const code = await rotateTransferCode(env, slab.id, user.id);
   const copy = presentPublicCopy(slab, request);
-  await emailCertificate(helpers, env, request, slab.digital_owner_email, copy, code);
+  try { await emailCertificate(helpers, env, request, slab.digital_owner_email, copy, code); }
+  catch (e) { console.log('transfer code notification failed', e && e.message); }
   if (helpers.audit) await helpers.audit(env, user.id, "regenerate_transfer_code", "slab", slab.id, {});
   return J({ ok: true, transfer_code: code, certificate: copy });
 }
@@ -665,7 +711,7 @@ async function redeemByCode(request, env, helpers, J) {
   }
   let newCode;
   try {
-    newCode = await transferDigitalCopy(env, slab, user.id, user.id, helpers.audit, "transfer_code");
+    newCode = await transferDigitalCopy(env, slab, user.id, user.id, helpers.audit, "transfer_code", hash);
   } catch (err) {
     await recordAttempt(env, user.id, false);
     throw err;
@@ -673,9 +719,10 @@ async function redeemByCode(request, env, helpers, J) {
   await recordAttempt(env, user.id, true);
   const fresh = await loadCopyRow(env, slab.id);
   const copy = presentPublicCopy(fresh, request);
-  await emailCertificate(helpers, env, request, user.email, copy, newCode);
+  try { await emailCertificate(helpers, env, request, user.email, copy, newCode); }
+  catch (e) { console.log('transfer certificate notification failed', e && e.message); }
   if (slab.digital_owner_email) {
-    await emailPlain(
+    try { await emailPlain(
       helpers,
       env,
       slab.digital_owner_email,
@@ -687,7 +734,7 @@ async function redeemByCode(request, env, helpers, J) {
         "",
         "Se non hai passato tu il certificato, scrivi a info@dreamint.it."
       ].join("\n")
-    );
+    ); } catch (e) { console.log('transfer seller notification failed', e && e.message); }
   }
   return J({ ok: true, copy, transfer_code: newCode });
 }
@@ -906,9 +953,10 @@ async function adminApproveClaim(request, env, id, helpers, J) {
 
   const fresh = await loadCopyRow(env, row.slab_id);
   const copy = presentPublicCopy(fresh, request);
-  await emailCertificate(helpers, env, request, row.claimant_email, copy, newCode);
+  try { await emailCertificate(helpers, env, request, row.claimant_email, copy, newCode); }
+  catch (e) { console.log('claim certificate notification failed', e && e.message); }
   if (row.owner_email) {
-    await emailPlain(
+    try { await emailPlain(
       helpers,
       env,
       row.owner_email,
@@ -919,7 +967,7 @@ async function adminApproveClaim(request, env, id, helpers, J) {
         "",
         "Seriale e rarità restano gli stessi. Se vuoi contestare, scrivi a info@dreamint.it."
       ].join("\n")
-    );
+    ); } catch (e) { console.log('claim seller notification failed', e && e.message); }
   }
   return J({ ok: true, claim_id: id, copy });
 }

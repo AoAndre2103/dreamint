@@ -35,9 +35,10 @@ function validOwnerSql(alias = 's') {
   return `${alias}.is_ungraded = 1 AND ${alias}.status IN ('approved','listed') ` +
     `AND (${alias}.archived_at IS NULL OR ${alias}.archived_reason = 'sold_outside')`;
 }
+// A published listing remains live until a valid code is actually redeemed.
+// Open marketplace purchase requests/orders, however, must be settled first.
 function noPendingSql(alias = 's') {
-  return `NOT EXISTS (SELECT 1 FROM listings li WHERE li.slab_id = ${alias}.id AND li.status IN ${OPEN_LISTINGS}) ` +
-    `AND NOT EXISTS (SELECT 1 FROM sales sa WHERE sa.slab_id = ${alias}.id AND sa.status IN ${PENDING_SALES})`;
+  return `NOT EXISTS (SELECT 1 FROM sales sa WHERE sa.slab_id = ${alias}.id AND sa.status IN ${PENDING_SALES})`;
 }
 
 async function eligible(request, env, helpers) {
@@ -70,11 +71,10 @@ async function generate(request, env, helpers, id) {
     return J({ error: 'Questa carta non può essere trasferita. Deve essere approvata e non eliminata.' }, 409);
   }
   const open = await env.DB.prepare(
-    `SELECT (SELECT COUNT(*) FROM listings WHERE slab_id = ? AND status IN ${OPEN_LISTINGS}) AS listings,
-            (SELECT COUNT(*) FROM sales WHERE slab_id = ? AND status IN ${PENDING_SALES}) AS sales`
-  ).bind(id, id).first();
-  if (open && (open.listings || open.sales)) {
-    return J({ error: 'Chiudi prima l’annuncio e le vendite in corso. Il trasferimento fuori DreaMint non annulla una vendita aperta.', code: 'open_transactions' }, 409);
+    `SELECT (SELECT COUNT(*) FROM sales WHERE slab_id = ? AND status IN ${PENDING_SALES}) AS sales`
+  ).bind(id).first();
+  if (open && open.sales) {
+    return J({ error: 'È presente una richiesta di acquisto o una vendita in corso su DreaMint. Risolvila prima di generare il codice.', code: 'open_transactions' }, 409);
   }
   const code = createRawTransferCode();
   const hash = await hashCode(code);
@@ -82,7 +82,7 @@ async function generate(request, env, helpers, id) {
   const at = now.toISOString();
   const expires = new Date(now.getTime() + VALIDITY_DAYS * 86400000).toISOString();
   // Controlli ripetuti nell'INSERT: evita la generazione dopo un cambio proprietario
-  // o durante l'apertura di una vendita concorrente.
+  // o durante una vendita in corso. Annunci e offerte senza acquisto restano online.
   const result = await env.DB.prepare(
     `INSERT OR REPLACE INTO ungraded_transfer_codes
       (slab_id, owner_id, code_hash, created_at, expires_at)
@@ -118,8 +118,9 @@ async function redeem(request, env, helpers) {
   }
   if (candidate.owner_id === user.id) return J({ error: 'Sei già il proprietario di questa carta' }, 409);
   const historyId = crypto.randomUUID();
-  // DB.batch è transazionale in D1. Il trasferimento avviene SOLO se hash,
-  // proprietario e assenza di vendite sono ancora validi all'atto dell'UPDATE.
+  // DB.batch è transazionale in D1. La carta passa al nuovo proprietario,
+  // gli annunci vengono chiusi e le proposte pendenti annullate INSIEME.
+  // Finché il codice non è riscattato, l'annuncio rimane pubblicato.
   const res = await env.DB.batch([
     env.DB.prepare(
       `UPDATE slabs SET physical_owner_id = ?, digital_owner_id = ?,
@@ -136,6 +137,16 @@ async function redeem(request, env, helpers) {
        SELECT ?, ?, ?, ?, 'raw_transfer_code', NULL, ?, 'physical' WHERE changes() > 0`
     ).bind(historyId, candidate.slab_id, candidate.owner_id, user.id, at),
     env.DB.prepare(
+      `UPDATE listings SET status = 'closed', paused_by_sale_id = NULL, reserved_sale_id = NULL
+       WHERE slab_id = ? AND status IN ${OPEN_LISTINGS}
+         AND EXISTS (SELECT 1 FROM slab_owner_history WHERE id = ?)`
+    ).bind(candidate.slab_id, historyId),
+    env.DB.prepare(
+      `UPDATE price_offers SET status = 'cancelled', updated_at = ?
+       WHERE slab_id = ? AND status IN ('pending','accepted')
+         AND EXISTS (SELECT 1 FROM slab_owner_history WHERE id = ?)`
+    ).bind(at, candidate.slab_id, historyId),
+    env.DB.prepare(
       `DELETE FROM ungraded_transfer_codes WHERE slab_id = ? AND owner_id = ? AND code_hash = ?
        AND EXISTS (SELECT 1 FROM slab_owner_history WHERE id = ?)`
     ).bind(candidate.slab_id, candidate.owner_id, hash, historyId),
@@ -148,6 +159,7 @@ async function redeem(request, env, helpers) {
   ]);
   if (!(res[0].meta && res[0].meta.changes)) return J({ error: 'Codice non più valido o carta con vendita in corso', code: 'transfer_locked' }, 409);
   return J({ ok: true, card_id: candidate.slab_id, card_name: candidate.card_name,
+    listing_closed: (res[2].meta && res[2].meta.changes) || 0,
     set_name: candidate.set_name, code_printed: candidate.code_printed });
 }
 

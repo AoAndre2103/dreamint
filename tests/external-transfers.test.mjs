@@ -27,9 +27,9 @@ test('open disputes prevent manual and automatic completion', () => {
  assert.match(api, /status = 'completed'.*NOT EXISTS \(SELECT 1 FROM sale_disputes/);
  assert.match(migration, /idx_sale_disputes_one_open/);
 });
-test('album exposes redemption and card exposes owner approval', () => {
+test('album exposes the single DMU transfer path and sales keep disputes (v34)', () => {
  assert.match(ui, /raw-transfer-redeem/);
  assert.match(ui, /raw-transfer-create/);
- assert.match(ui, /raw-approve/);
+ assert.doesNotMatch(ui, /raw-approve/);
  assert.match(ui, /data-dispute/);
 });

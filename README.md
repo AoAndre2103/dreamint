@@ -6,6 +6,25 @@ Il progetto Cloudflare Pages si chiama **gemint-beta** e usa Functions, D1 e KV.
 
 Oggi il sito è in **beta gratuita, senza commissioni**. I pagamenti avvengono **direttamente tra le persone tramite PayPal** (Beni e servizi / WPS): DreaMint non tiene mai i soldi e non intermedia il pagamento. In chat e negli annunci va ricordato di chiudere la trattativa sul sito e di pagare con PayPal Beni e servizi: fuori dal sito si perdono la protezione acquisti PayPal, lo storico della chat e la possibilità di segnalare l’utente.
 
+## Novità v34: chiusura dell'annuncio al riscatto del codice (locale, NON pubblicata)
+
+- **Non gradate:** il venditore può generare il codice monouso anche quando la carta è ancora in vendita nel Market. **La generazione non chiude l'annuncio**; l'annuncio viene chiuso automaticamente solo quando il compratore riscatta correttamente il codice.
+- **Gradate:** stesso comportamento per il trasferimento del set completo tramite codice dal certificato: annuncio ancora visibile fino al riscatto e chiusura automatica alla conferma.
+- La modifica del proprietario, la chiusura degli annunci (`active`, `paused`, `reserved`) e l'annullamento delle offerte ancora `pending`/`accepted` avvengono **nella stessa transazione D1**. Non possono restare annunci attivi intestati al precedente proprietario.
+- Una **vendita su DreaMint in corso** (`requested`, `accepted`, `paid`, `shipped`) blocca sia la generazione sia il riscatto, per evitare conflitti con altri acquirenti. L'annuncio non viene chiuso in caso di codice errato, scaduto o già usato.
+- Il codice non gradata `DMU-...` resta valido 30 giorni e monouso. Per le gradate resta il codice `DM-...` del certificato, separato da quello delle non gradate. I due percorsi dell'interfaccia restano distinti e senza il vecchio pulsante da 15 minuti sulle non gradate.
+- Nessuna nuova migrazione v34: occorrono soltanto quelle v30 e v32 se non ancora applicate. Aggiornati i file frontend versionati per evitare vecchie pagine nella cache.
+- Verifica con test Node/SQLite della generazione, riscatto, annuncio che resta aperto fino al riscatto, annuncio che si chiude dopo, offerte annullate, vincoli di vendita, sicurezza, riscatti concorrenti. Non effettuato deploy online.
+
+## Novità v33: trasferimenti verificati per gradate e non gradate
+
+- **Non gradate (vendite esterne):** un solo percorso «Passa questa carta al compratore»; genera `DMU-...` (monouso, 30 giorni). Anche se esiste un annuncio aperto puoi generare il codice dalla sezione **Album → Trasferisci / riscatta non gradata**. Anche le carte già archiviate come vendute fuori si possono trasferire. Il compratore deve usare un account verificato; la carta passa nel suo album conservando dati e foto.
+- **Gradate:** il proprietario della copia digitale gestisce il codice `DM-...` dal **certificato**. Il compratore lo riscatta con numero certificato e grader nella sezione «Riscatta una copia». Dopo il riscatto il codice precedente perde validità e viene emesso quello del nuovo proprietario; seriale e rarità non cambiano. Un annuncio aperto non blocca il codice; viene chiuso al riscatto. Una vendita o richiesta d'acquisto già in corso blocca invece il trasferimento fino alla sua risoluzione.
+- I due percorsi non sono intercambiabili. Il vecchio pulsante «Genera codice monouso (15 minuti)» non è presente nel codice v33 e non deve comparire dopo la pubblicazione. Le stringhe JavaScript hanno una nuova versione URL per evitare di servire vecchie copie dalla cache.
+- Sulle gradate il trasferimento avviene con controlli transazionali sul codice e sulla proprietà anche con richieste concorrenti; il pulsante di rigenerazione è mostrato solo al proprietario. Un errore della notifica email non annulla l'esito del trasferimento.
+- **Database:** nessuna nuova migrazione per v33. Per una installazione non ancora aggiornata restano necessarie `migrate-v30.sql` e `migrate-v32.sql`.
+- **Ambiente di test:** verifiche automatiche API + SQLite. Il sito online non è stato pubblicato o testato con account reali.
+
 ## Novità v32: Market e Album
 
 La sezione delle vendite si chiama **Market** (`#/market`) e continua a offrire filtri. I vecchi link `#/galleria` rimangono validi. L'**Album** invece parte dal filtro **Tutte** e include subito gradate e non gradate, senza percorso separato per lingua giapponese.
@@ -14,7 +33,7 @@ La sezione delle vendite si chiama **Market** (`#/market`) e continua a offrire 
 
 Se una **non gradata** è stata venduta esternamente, il venditore apre l'Album oppure la scheda della carta e sceglie «Trasferisci / riscatta non gradata». Seleziona la carta e genera un **codice monouso** da consegnare all'acquirente. L'acquirente entra nel proprio account e riscatta il codice: la stessa registrazione (foto e dati) passa al suo album; non si elimina la carta e non si genera una vendita PayPal.
 
-L'annuncio DreaMint e le vendite aperte vanno chiusi prima della generazione/riscatto. Funziona anche per le carte già archiviate in precedenza come `sold_outside`. I codici scadono in 30 giorni, sono rigenerabili dal venditore e sono mostrati in chiaro una sola volta. Serve la **migrazione `migrate-v32.sql`** prima di usare il nuovo flusso. I codici di trasferimento delle carte gradate sono **separati** e non vengono modificati.
+**Dalla v34**, l'annuncio DreaMint resta aperto fino al riscatto riuscito, quando viene chiuso automaticamente. Le vendite o richieste d'acquisto aperte vanno invece risolte prima di generare o riscattare il codice. Funziona anche per le carte già archiviate in precedenza come `sold_outside`. I codici scadono in 30 giorni, sono rigenerabili dal venditore e sono mostrati in chiaro una sola volta. Serve la **migrazione `migrate-v32.sql`** prima di usare il nuovo flusso. I codici di trasferimento delle carte gradate sono **separati** e non vengono modificati.
 
 Questa v32 include le modifiche v30 (offerte) e v31 (Galleria unificata), ma **uno ZIP scaricato non aggiorna automaticamente il sito online**: per vederle su dreamint.it occorre pubblicare i file e applicare le migrazioni con backup, dopo approvazione esplicita.
 

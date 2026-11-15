@@ -127,10 +127,11 @@
     return '<section class="cert-page" id="cert-print">' +
       '<div class="cert-toolbar no-print">' +
       '<button type="button" class="btn primary" id="cert-print-btn">' + tr("cert.print", "Stampa / Salva PDF") + "</button>" +
-      '<button type="button" class="btn ghost" id="cert-regen-btn">' + tr("cert.regen", "Genera un nuovo codice") + "</button>" +
+      (c.can_regenerate ? '<button type="button" class="btn ghost" id="cert-regen-btn">' + tr("cert.regen", "Genera un nuovo codice") + "</button>" : "") +
       '<button type="button" class="btn ghost" data-share-copy="' + esc(c.id) + '">' + tr("cert.share", "Condividi") + "</button>" +
       '<a class="btn ghost" href="/c/' + esc(c.id) + '" target="_blank" rel="noopener">' + tr("cert.public", "Pagina 3D") + "</a>" +
       "</div>" +
+      (c.transfer_locked ? '<p class="notice">' + esc(tr("cert.transferBlocked", "Risolvi eventuali vendite o richieste d’acquisto in corso prima di rigenerare un codice.")) + '</p>' : "") +
       '<article class="cert-sheet">' +
       '<header class="cert-head"><img src="/img/dreamint-logo-full.webp?v=20261110e" class="cert-logo-light" alt="DreaMint" width="220">' +
       '<img src="/img/dreamint-logo-full-dark.webp?v=20261110e" class="cert-logo-dark" alt="DreaMint" width="220">' +
@@ -261,8 +262,8 @@
         regen.disabled = true;
         api("cards/" + encodeURIComponent(cert.id) + "/transfer-code", { body: {} }).then(function (d) {
           var host = document.getElementById("app");
-          if (host) host.innerHTML = pageCertificate(Object.assign({}, cert, d.certificate || {}, { transfer_code: d.transfer_code }), d.transfer_code);
-          bindCertificate(Object.assign({}, cert, { transfer_code: d.transfer_code }));
+          if (host) host.innerHTML = pageCertificate(Object.assign({}, cert, d.certificate || {}, { transfer_code: d.transfer_code, can_regenerate: true }), d.transfer_code);
+          bindCertificate(Object.assign({}, cert, d.certificate || {}, { transfer_code: d.transfer_code, can_regenerate: true }));
           bindShareButtons(d.certificate || cert);
         }).catch(function (ex) {
           alert(ex.message);

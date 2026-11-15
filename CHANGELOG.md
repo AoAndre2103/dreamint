@@ -1,14 +1,23 @@
-## v28 — Trasferimenti esterni non gradate e contestazioni
-- Codice di trasferimento monouso di 36 caratteri esadecimali, memorizzato solo come SHA-256, valido 15 minuti; non permanente nell’album.
-- Destinatario autenticato riscatta il codice; il venditore approva dopo la consegna fisica. Registro proprietà e audit; email informative a entrambe le parti.
-- Blocco per carte test, archiviate, con annunci o vendite aperti. Le vendite esterne non sono verificate da DreaMint.
-- Acquirente può aprire una contestazione durante la spedizione; completamento manuale e automatico sospesi finché un amministratore non la risolve.
-- Migrazione D1: migrate-v28.sql (necessaria prima del deploy).
-- Verifica sintattica e test automatici eseguiti; test end-to-end con D1 reale e due account ancora da effettuare.
+## v34 — 2026-11-15 — Annunci chiusi automaticamente al riscatto (locale, NON pubblicata)
+
+- Per carte gradate e non gradate, un annuncio nel Market non blocca più la **generazione del codice**. La carta resta in vendita finché il compratore non usa validamente il codice.
+- Il **riscatto** della carta chiude automaticamente gli annunci collegati nella **stessa transazione** in cui trasferisce la proprietà e cancella/rinnova il codice. Le offerte non concluse vengono annullate; quelle convertite in vere vendite vengono protette dal blocco delle transazioni.
+- Resta vietato trasferire carte con richieste d'acquisto o vendite in corso (`requested`, `accepted`, `paid`, `shipped`). Inserimenti di codice errato, scaduto o già speso non alterano gli annunci.
+- Non gradate: una sola sezione dedicata al passaggio della carta (codice `DMU-...`, scadenza 30 giorni). Gradate: codice `DM-...` nel certificato. La separazione dei due flussi e i controlli di sicurezza v33 sono conservati.
+- Messaggi e stato del pulsante aggiornati nelle lingue IT/EN. Asset JS frontend versionati con chiave v34 per impedire cache obsolete. Nessuna migrazione database aggiuntiva. Nessuna pubblicazione sul sito online.
 
 # Changelog
 
 Storia ricavata dal codice, dalle migrazioni e dal lavoro recente sul frontend. Le versioni del server (v13–v21) coincidono con i file `migrate-vN.sql`. Il frontend in questo albero è la v9b, con estrazione reveal-v2 revisione rv3.
+
+## v33 — Sicurezza e usabilità dei trasferimenti (15 novembre 2026)
+
+- Non gradate: percorso unico di trasferimento dall'Album; confermato end-to-end il caso «annuncio chiuso come venduta fuori» → generazione `DMU` → riscatto → cambio proprietario e monouso.
+- Gradate: ripristinati e verificati generazione e riscatto `DM` nel certificato; un annuncio o una vendita aperti impediscono la procedura con istruzioni chiare.
+- Corretto il rischio di doppio trasferimento contemporaneo: aggiornamento atomico del proprietario, codice e storico, con verifica dell'hash originario.
+- Rigenerazione del codice gradata riservata al proprietario, protetta contro cambio proprietario concorrente; pulsante nascosto per gli altri utenti e spiegazione se bloccato.
+- Notifiche email non bloccanti dopo l'avvenuto trasferimento; nuova versione degli script client per evitare codice precedente in cache.
+- Verificato anche il percorso di riscatto con foto approvato dall'amministratore. Nessuna nuova migrazione database.
 
 ## v32 — 2026-11-15 — Market e Album (locale, NON pubblicata)
 
