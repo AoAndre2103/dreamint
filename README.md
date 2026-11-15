@@ -147,3 +147,10 @@ Le clip in `tests/fixtures-video/` servono ai test della video-sfida: vanno comm
 ```bash
 python3 scripts/process-logo.py
 ```
+
+
+## v30 — Fai un’offerta
+
+Una proposta di prezzo si invia dalla pagina dell’annuncio, tramite il modulo **Fai un’offerta** (importo inferiore al prezzo richiesto, messaggio facoltativo). Il venditore trova le proposte in **Vendite e offerte** e può accettarle o rifiutarle. L’acquirente riceve l’esito nella stessa sezione e, se accettata, completa il checkout inserendo spedizione/recapito; l’ordine mantiene il prezzo concordato. La proposta non costituisce vendita o prenotazione. Un pagamento andato a buon fine segue le stesse regole degli altri ordini.
+
+Per pubblicare la v30 serve prima la **migrazione additiva `migrate-v30.sql`** (nuova tabella `price_offers`, nessun cambiamento a carte o ordini esistenti). `./DEPLOY.sh` verifica e applica automaticamente la migrazione dopo il backup e con conferma esplicita. L’invio email diretto ai partecipanti richiede le credenziali del provider già configurato sul sito; in loro assenza le offerte restano accessibili dall’app.

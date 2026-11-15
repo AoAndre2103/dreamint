@@ -11,6 +11,8 @@ export const IP_RULES = [
   { name: "upload", test: (m, p) => m === "POST" && (p === "cards" || /^cards\/[^/]+\/photos$/.test(p)), limit: 60, windowSec: HOUR },
   { name: "catalog", test: (m, p) => m === "POST" && p === "catalog", limit: 120, windowSec: HOUR },
   { name: "buy", test: (m, p) => m === "POST" && /^listings\/[^/]+\/request$/.test(p), limit: 30, windowSec: HOUR },
+  { name: "priceoffer", test: (m, p) => m === "POST" && /^listings\/[^/]+\/offers$/.test(p), limit: 40, windowSec: HOUR },
+  { name: "priceofferact", test: (m, p) => m === "POST" && /^offers\/[^/]+\/(accept|reject|cancel|checkout)$/.test(p), limit: 90, windowSec: HOUR },
   { name: "sale", test: (m, p) => m === "POST" && /^sales\//.test(p), limit: 120, windowSec: HOUR },
   { name: "me", test: (m, p) => m === "PATCH" && p === "me", limit: 20, windowSec: HOUR },
   { name: "copy", test: (m, p) => m === "POST" && (p === "copies/redeem" || p === "claims" || /^cards\/[^/]+\/transfer-code$/.test(p)), limit: 20, windowSec: HOUR },

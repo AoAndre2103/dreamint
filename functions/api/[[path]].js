@@ -269,6 +269,11 @@ async function route(request, env, path, url) {
   // v27c: il venditore elimina il proprio annuncio indicando un motivo
   const closeM = path.match(/^listings\/([^/]+)\/close$/);
   if (method === "POST" && closeM) return closeMyListing(request, env, closeM[1]);
+  const offerCreate = path.match(/^listings\/([^/]+)\/offers$/);
+  if (method === "POST" && offerCreate) return createPriceOffer(request, env, offerCreate[1]);
+  if (method === "GET" && path === "offers") return myPriceOffers(request, env);
+  const offerAct = path.match(/^offers\/([^/]+)\/(accept|reject|cancel|checkout)$/);
+  if (method === "POST" && offerAct) return priceOfferAction(request, env, offerAct[1], offerAct[2]);
   const buy = path.match(/^listings\/([^/]+)\/request$/);
   if (method === "POST" && buy) return requestBuy(request, env, buy[1]);
 
@@ -2051,7 +2056,15 @@ async function listMarket(request, url, env) {
   // v28: filtro per lingua della carta (es. language=JPN per la sezione giapponese)
   const langRaw = (url.searchParams.get("language") || "").trim().toUpperCase();
   if (langRaw && !LANGUAGES.includes(langRaw)) return json({ error: "Lingua non valida", code: "invalid_language" }, 400);
-  if (langRaw) extra += " AND m.language = ?";
+  const bindings = [];
+  if (langRaw) { extra += " AND m.language = ?"; bindings.push(langRaw); }
+  // A direct announcement link must remain usable even when it is not in the newest 100 listings.
+  const selectedListingId = (url.searchParams.get("listing_id") || "").trim();
+  if (selectedListingId) {
+    if (!/^[a-zA-Z0-9_-]{1,120}$/.test(selectedListingId)) return json({ error: "Annuncio non valido" }, 400);
+    extra += " AND l.id = ?";
+    bindings.push(selectedListingId);
+  }
   const marketStmt = env.DB.prepare(
     `SELECT l.*, s.grader, s.grade, s.is_ungraded, s.is_test, s.card_condition, s.rarity_tier, s.serial_number, s.serial_total_at_assignment, s.opened_at,
             s.certificate_no, s.cardmarket_avg_cents, m.game, m.set_name, m.set_code, m.code_printed, m.code_normalized, m.name AS card_name, m.catalog_image,
@@ -2066,7 +2079,7 @@ async function listMarket(request, url, env) {
      ORDER BY l.created_at DESC
      LIMIT 100`
   );
-  const rows = await (langRaw ? marketStmt.bind(langRaw) : marketStmt).all();
+  const rows = await (bindings.length ? marketStmt.bind(...bindings) : marketStmt).all();
   const listings = (rows.results || []).map((r) => ({
       id: r.id,
       slab_id: r.slab_id,
@@ -2076,6 +2089,7 @@ async function listMarket(request, url, env) {
       shipping_note: r.shipping_note,
       created_at: r.created_at,
       seller_name: r.seller_name,
+      mine: !!(user && user.id === r.seller_id),
       grader: r.grader,
       grade: r.grade,
       is_ungraded: !!r.is_ungraded,
@@ -2189,6 +2203,152 @@ async function updateCardPrice(request, env, id) {
   return json({ card: presentSlab(fresh, user, true), listing: listing ? { id: listing.id, price_cents: parsed.cents, status: "active" } : null });
 }
 
+
+/* ---------------- v30: offerte di prezzo ---------------- */
+const PRICE_OFFER_RULE = { name: 'price-offers-create', limit: 20, windowSec: 86400 };
+
+async function priceOfferNotify(env, request, toUserId, subject, lines) {
+  if (!notifyProviderConfigured(env)) return;
+  try {
+    const person = await env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(toUserId).first();
+    if (!person || !EMAIL_SHAPE_RE.test(String(person.email || '')) || UNDELIVERABLE_TLD_RE.test(person.email)) return;
+    await sendNotifyEmail(env, { to: person.email, subject, text: lines.join('\n') + '\n\nApri: ' + siteOrigin(request) + '/#/vendite' });
+  } catch (err) { console.log('price offer notification error', err && err.message); }
+}
+
+async function createPriceOffer(request, env, listingId) {
+  const buyer = await requireUser(request, env);
+  const body = await readJson(request);
+  const price = parsePriceEuros(body.offer_euros);
+  if (!price.ok || price.cents < 100) return json({ error: 'Indica un’offerta di almeno 1 €' }, 400);
+  const listing = await env.DB.prepare('SELECT * FROM listings WHERE id = ?').bind(listingId).first();
+  if (!listing || listing.status !== 'active') return json({ error: 'Annuncio non disponibile' }, 404);
+  const slab = await env.DB.prepare('SELECT is_test FROM slabs WHERE id = ?').bind(listing.slab_id).first();
+  if (!slab || isHiddenTest(slab, buyer)) return json({ error: 'Annuncio non disponibile' }, 404);
+  if (buyer.id === listing.seller_id) return json({ error: 'Non puoi fare un’offerta sul tuo annuncio' }, 403);
+  if (price.cents >= listing.price_cents) return json({ error: 'Per il prezzo pieno usa Richiedi l’acquisto: l’offerta deve essere inferiore' }, 400);
+  const exists = await env.DB.prepare("SELECT id FROM price_offers WHERE listing_id = ? AND buyer_id = ? AND status IN ('pending','accepted')")
+    .bind(listingId, buyer.id).first();
+  if (exists) return json({ error: 'Hai già un’offerta aperta per questa carta', code: 'offer_exists' }, 409);
+  const existingSale = await env.DB.prepare("SELECT id FROM sales WHERE listing_id = ? AND buyer_id = ? AND status IN ('requested','accepted','paid','shipped')")
+    .bind(listingId, buyer.id).first();
+  if (existingSale) return json({ error: 'Hai già una richiesta d’acquisto aperta' }, 409);
+  const valid = await env.DB.prepare('SELECT 1 AS ok FROM listings WHERE id = ? AND status = \'active\' AND ' + listingValidSql('listings'))
+    .bind(listingId).first();
+  if (!valid) return json({ error: 'Annuncio non disponibile' }, 404);
+  await enforceIdentRule(env, PRICE_OFFER_RULE, buyer.id);
+  const id = crypto.randomUUID(), now = nowIso();
+  let result;
+  try {
+    result = await env.DB.prepare(`INSERT INTO price_offers
+      (id, listing_id, slab_id, seller_id, buyer_id, offer_cents, message, status, created_at, updated_at)
+      SELECT ?, l.id, l.slab_id, l.seller_id, ?, ?, ?, 'pending', ?, ?
+      FROM listings l WHERE l.id = ? AND l.status = 'active' AND ${listingValidSql('l')}`)
+      .bind(id, buyer.id, price.cents, String(body.message || '').trim().slice(0, 500), now, now, listingId).run();
+  } catch (err) {
+    if (isUniqueViolation(err)) return json({ error: 'Hai già un’offerta aperta per questa carta' }, 409);
+    throw err;
+  }
+  if (!result.meta || result.meta.changes !== 1) return json({ error: 'Annuncio non disponibile' }, 409);
+  await audit(env, buyer.id, 'price_offer_created', 'price_offer', id, { listing_id: listingId, offer_cents: price.cents }).catch(() => {});
+  await priceOfferNotify(env, request, listing.seller_id, 'DreaMint: nuova offerta ricevuta',
+    ['Hai ricevuto un’offerta di ' + formatEuros(price.cents) + ' per un annuncio da ' + formatEuros(listing.price_cents) + '.',
+     'Accedi a Vendite e offerte per accettare o rifiutare la proposta.']);
+  return json({ offer: { id, listing_id: listingId, offer_cents: price.cents, status: 'pending' } }, 201);
+}
+
+async function myPriceOffers(request, env) {
+  const user = await requireUser(request, env);
+  const rows = await env.DB.prepare(`SELECT o.*, l.price_cents AS asking_cents, l.status AS listing_status,
+      m.name AS card_name, m.code_printed, seller.display_name AS seller_name,
+      buyer.display_name AS buyer_name, sl.is_test
+    FROM price_offers o
+    JOIN slabs sl ON sl.id = o.slab_id
+    JOIN card_models m ON m.id = sl.card_model_id
+    JOIN listings l ON l.id = o.listing_id
+    JOIN users seller ON seller.id = o.seller_id
+    JOIN users buyer ON buyer.id = o.buyer_id
+    WHERE (o.seller_id = ? OR o.buyer_id = ?) AND ${testVisibleSql(user, 'sl')}
+    ORDER BY o.created_at DESC LIMIT 200`).bind(user.id, user.id).all();
+  return json({ offers: (rows.results || []).map(({ is_test, ...o }) => o) }, 200, { 'cache-control': 'no-store' });
+}
+
+async function priceOfferAction(request, env, offerId, action) {
+  const user = await requireUser(request, env);
+  const offer = await env.DB.prepare('SELECT * FROM price_offers WHERE id = ?').bind(offerId).first();
+  if (!offer) return json({ error: 'Offerta non trovata' }, 404);
+  const slab = await env.DB.prepare('SELECT is_test FROM slabs WHERE id = ?').bind(offer.slab_id).first();
+  if (!slab || isHiddenTest(slab, user)) return json({ error: 'Offerta non trovata' }, 404);
+  if (action === 'accept' || action === 'reject') {
+    if (user.id !== offer.seller_id) return json({ error: 'Solo il venditore può rispondere' }, 403);
+    if (offer.status !== 'pending') return json({ error: 'Questa offerta ha già ricevuto una risposta' }, 409);
+    const next = action === 'accept' ? 'accepted' : 'rejected';
+    const res = await env.DB.prepare(`UPDATE price_offers SET status = ?, updated_at = ?
+      WHERE id = ? AND seller_id = ? AND status = 'pending' AND (
+        ? = 'rejected' OR EXISTS (SELECT 1 FROM listings l WHERE l.id = price_offers.listing_id
+          AND l.status = 'active' AND ${listingValidSql('l')}))`)
+      .bind(next, nowIso(), offerId, user.id, next).run();
+    if (!res.meta || res.meta.changes !== 1) return json({ error: 'Annuncio non disponibile oppure offerta già gestita' }, 409);
+    await audit(env, user.id, 'price_offer_' + next, 'price_offer', offerId, {}).catch(() => {});
+    await priceOfferNotify(env, request, offer.buyer_id,
+      'DreaMint: offerta ' + (next === 'accepted' ? 'accettata' : 'rifiutata'),
+      [next === 'accepted'
+        ? 'Il venditore ha accettato la tua proposta di ' + formatEuros(offer.offer_cents) + '. Completa l’acquisto dalla pagina Vendite e offerte. L’accettazione non riserva la carta.'
+        : 'Il venditore ha rifiutato la tua proposta di ' + formatEuros(offer.offer_cents) + '.']);
+    return json({ ok: true, status: next });
+  }
+  if (action === 'cancel') {
+    if (user.id !== offer.buyer_id) return json({ error: 'Solo chi ha fatto l’offerta può annullarla' }, 403);
+    const res = await env.DB.prepare("UPDATE price_offers SET status = 'cancelled', updated_at = ? WHERE id = ? AND buyer_id = ? AND status IN ('pending','accepted')")
+      .bind(nowIso(), offerId, user.id).run();
+    if (!res.meta || res.meta.changes !== 1) return json({ error: 'Offerta non più annullabile' }, 409);
+    await audit(env, user.id, 'price_offer_cancelled', 'price_offer', offerId, {}).catch(() => {});
+    return json({ ok: true, status: 'cancelled' });
+  }
+  if (action !== 'checkout') return json({ error: 'Azione sconosciuta' }, 400);
+  if (user.id !== offer.buyer_id) return json({ error: 'Solo l’acquirente può completare l’acquisto' }, 403);
+  if (offer.status !== 'accepted') return json({ error: 'Il venditore deve prima accettare l’offerta' }, 409);
+  const listing = await env.DB.prepare('SELECT * FROM listings WHERE id = ?').bind(offer.listing_id).first();
+  if (!listing || listing.status !== 'active' || listing.seller_id !== offer.seller_id) return json({ error: 'Annuncio non disponibile' }, 409);
+  const kind = effectiveKind(listing.kind);
+  const body = await readJson(request);
+  if (kind !== 'digital' && !String(body.contact || '').trim()) return json({ error: 'Indica un recapito per il venditore' }, 400);
+  const ship = kind === 'digital'
+    ? { ok: true, method_id: null, shipping_cents: 0, insurance: 0, insurance_cents: 0, total_cents: offer.offer_cents, dest_json: null }
+    : parseShippingChoice(body, offer.offer_cents);
+  if (!ship.ok) return json({ error: ship.error }, 400);
+  const saleId = crypto.randomUUID();
+  let res;
+  try {
+    res = await env.DB.batch([
+      env.DB.prepare(`INSERT INTO sales (id, listing_id, slab_id, seller_id, buyer_id, price_cents, message, contact,
+        status, created_at, shipping_method, shipping_cents, insurance, insurance_cents, total_cents, shipping_dest, kind)
+        SELECT ?, o.listing_id, o.slab_id, o.seller_id, o.buyer_id, o.offer_cents, o.message, ?, 'accepted', ?,
+          ?, ?, ?, ?, ?, ?, l.kind
+        FROM price_offers o JOIN listings l ON l.id = o.listing_id
+        WHERE o.id = ? AND o.buyer_id = ? AND o.status = 'accepted'
+          AND l.status = 'active' AND l.seller_id = o.seller_id AND ${listingValidSql('l')}
+          AND NOT EXISTS (SELECT 1 FROM sales sa WHERE sa.listing_id = o.listing_id AND sa.buyer_id = o.buyer_id
+            AND sa.status IN ('requested','accepted','paid','shipped'))`)
+        .bind(saleId, String(body.contact || '').trim().slice(0, 200), nowIso(), ship.method_id,
+          ship.shipping_cents, ship.insurance, ship.insurance_cents, ship.total_cents, ship.dest_json,
+          offerId, user.id),
+      env.DB.prepare("UPDATE price_offers SET status = 'converted', sale_id = ?, updated_at = ? WHERE id = ? AND status = 'accepted' AND EXISTS (SELECT 1 FROM sales WHERE id = ? AND buyer_id = ?)")
+        .bind(saleId, nowIso(), offerId, saleId, user.id)
+    ]);
+  } catch (err) {
+    if (isUniqueViolation(err)) return json({ error: 'Un’altra vendita è già stata confermata' }, 409);
+    throw err;
+  }
+  if (!res[0].meta || res[0].meta.changes !== 1 || !res[1].meta || res[1].meta.changes !== 1) {
+    return json({ error: 'Offerta non più disponibile o hai già una vendita aperta' }, 409);
+  }
+  await audit(env, user.id, 'price_offer_checkout', 'price_offer', offerId, { sale_id: saleId, price_cents: offer.offer_cents }).catch(() => {});
+  await priceOfferNotify(env, request, offer.seller_id, 'DreaMint: acquisto da offerta accettata',
+    ['L’acquirente ha completato la richiesta per ' + formatEuros(offer.offer_cents) + ' (spedizione esclusa).',
+     'Il pagamento resta da confermare tramite la normale procedura DreaMint.']);
+  return json({ sale: { id: saleId, listing_id: offer.listing_id, price_cents: offer.offer_cents, status: 'accepted' } }, 201);
+}
 
 async function requestBuy(request, env, listingId) {
   const user = await requireUser(request, env);

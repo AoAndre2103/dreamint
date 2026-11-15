@@ -1530,12 +1530,12 @@
     var u = state.user;
     var items = [
       { href: "#/", label: tr("nav.home") },
-      { href: "#/gradate", label: tr("nav.graded") },
-      { href: "#/non-gradate", label: tr("nav.ungraded") },
+      { href: "#/galleria", label: tr("nav.gallery") },
       { href: "#/giapponesi", label: tr("nav.japan") },
       { href: "#/album", label: tr("nav.collection") },
       { href: "#/commissioni", label: trx("nav.fees", "Commissioni e piani"), cls: "nav-fees" }
     ];
+    if (u) items.push({ href: "#/vendite", label: tr("po.nav") });
     if (u && window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) items.push({ href: "#/messaggi", label: tr("chat.inbox") });
     if (u && u.role === "admin") items.push({ href: "#/admin", label: tr("nav.admin"), badge: pendingReviewCount() });
     items.push({ href: "#/assistenza", label: tr("nav.support"), cls: "nav-support" });
@@ -1605,8 +1605,7 @@
     closeMobNav();
     var tabIco = {
       home: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 11.2 12 5l8 6.2V20a1 1 0 0 1-1 1h-5.2v-6.2H10.2V21H5a1 1 0 0 1-1-1v-8.8Z"/></svg>',
-      graded: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3.4 20.4 10 12 21 3.6 10 12 3.4Z"/></svg>',
-      ungraded: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="4" width="14" height="16" rx="1.6"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>',
+      gallery: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>',
       collection: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>',
       admin: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3.5 19 6.2v5.3c0 4.4-3 7.4-7 8.5-4-1.1-7-4.1-7-8.5V6.2L12 3.5Z"/></svg>',
       login: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M5.2 19.2c1.2-3.2 3.6-4.6 6.8-4.6s5.6 1.4 6.8 4.6"/></svg>',
@@ -1614,8 +1613,7 @@
     };
     var tabs = [
       ["#/", "home", tr("nav.home")],
-      ["#/gradate", "graded", tr("nav.graded")],
-      ["#/non-gradate", "ungraded", tr("nav.ungraded")],
+      ["#/galleria", "gallery", tr("nav.gallery")],
       ["#/album", "collection", tr("nav.collection")]
     ];
     if (state.user && state.user.role === "admin") tabs.push(["#/admin", "admin", tr("nav.admin")]);
@@ -1632,6 +1630,7 @@
       if (href === "#/") href = "/";
       var on = href === r.path || (href !== "/" && r.path.startsWith(href));
       if ((href === "/album" || href === "/collezione") && isAlbumPath(r.path)) on = true;
+      if (href === "/galleria" && (r.path === "/gradate" || r.path.startsWith("/gradate/") || r.path === "/non-gradate" || r.path.startsWith("/non-gradate/") || r.path === "/mercato")) on = true;
       a.classList.toggle("on", on);
       a.classList.toggle("active", on);
     });
@@ -1687,8 +1686,8 @@
       '<p class="games-line">' + tr("home.games") + "</p>" +
       '<p class="lede">' + tr("home.lede") + "</p>" +
       '<div class="hero-actions">' +
-      '<a class="btn primary" href="#/gradate" data-link>' + tr("home.ctaGraded") + "</a>" +
-      '<a class="btn ghost" href="#/non-gradate" data-link>' + tr("home.ctaUngraded") + "</a>" +
+      '<a class="btn primary" href="#/galleria/gradate" data-link>' + tr("home.ctaGraded") + "</a>" +
+      '<a class="btn ghost" href="#/galleria/non-gradate" data-link>' + tr("home.ctaUngraded") + "</a>" +
       (state.user ? '<a class="btn ghost" href="#/collezione" data-link>' + tr("home.ctaCollection") + "</a>" : '<a class="btn ghost" href="#/registrati" data-link>' + tr("home.ctaSignup") + "</a>") +
       "</div></div>" +
       '<div class="slab-stage hero-slab"><div class="hero-fan" data-hero-fan role="group" aria-label="' + esc(tr("home.fanAria")) + '">' +
@@ -1696,8 +1695,8 @@
       '</div><p class="hero-fan-hint">' + tr("home.fanHint") + "</p></div></section>" +
       '<div class="ticker-wrap" aria-hidden="true"><div class="ticker">' + ticker + "</div></div>" +
       '<section class="split">' +
-      '<a class="choice" href="#/gradate" data-link><h3>' + tr("home.choiceGraded.h") + "</h3><p>" + tr("home.choiceGraded.p") + '</p><span class="go">' + tr("home.choiceGraded.go") + "</span></a>" +
-      '<a class="choice" href="#/non-gradate" data-link><h3>' + tr("home.choiceRaw.h") + "</h3><p>" + tr("home.choiceRaw.p") + '</p><span class="go">' + tr("home.choiceRaw.go") + "</span></a>" +
+      '<a class="choice" href="#/galleria/gradate" data-link><h3>' + tr("home.choiceGraded.h") + "</h3><p>" + tr("home.choiceGraded.p") + '</p><span class="go">' + tr("home.choiceGraded.go") + "</span></a>" +
+      '<a class="choice" href="#/galleria/non-gradate" data-link><h3>' + tr("home.choiceRaw.h") + "</h3><p>" + tr("home.choiceRaw.p") + '</p><span class="go">' + tr("home.choiceRaw.go") + "</span></a>" +
       "</section>" +
       (window.DreaMintCert ? window.DreaMintCert.homeHowToHtml() : "") +
       rarityLadder() +
@@ -2328,6 +2327,33 @@
       '<div class="lightbox" id="lightbox" hidden><button type="button" class="lightbox-close" aria-label="' + esc(tr("gal.close")) + '">×</button>' +
       '<img id="lb-img" alt="' + esc(tr("gal.full")) + '"></div></section>';
   }
+  // v31: la Galleria apre subito tutte le carte; Gradate/Non gradate sono filtri visivi.
+  // Si riutilizza il board del marketplace per mantenere ricerca per TCG e ordinamento.
+  function pageGallery(listings, initialSection) {
+    listings = listings || [];
+    var html = '<div class="page-head"><div><h1>' + esc(tr("gallery.title")) + '</h1><p>' + esc(tr("gallery.description")) + '</p></div>' +
+      '<a class="btn primary" href="#/registra" data-link>' + esc(tr("gallery.sell")) + '</a></div>' +
+      '<p class="row-actions"><a class="btn ghost" href="#/giapponesi" data-link>' + esc(tr("nav.japan")) + '</a>' +
+      ' <a class="btn ghost" href="#/vendite" data-link>' + esc(tr("market.sales")) + '</a></p>';
+    if (window.DreaMintHome && window.DreaMintHome.marketBoard) {
+      html += window.DreaMintHome.marketBoard(listings, {
+        typeFilters: true,
+        initialSection: initialSection || "",
+        emptyHtml: window.DreaMintHome.emptyState
+          ? window.DreaMintHome.emptyState("", tr("gallery.empty"), "#/registra", tr("gallery.sell"))
+          : '<p class="empty">' + esc(tr("gallery.empty")) + '</p>'
+      });
+      return html;
+    }
+    if (!listings.length) return html + '<p class="empty">' + esc(tr("gallery.empty")) + '</p>';
+    return html + '<div class="trade-grid">' + listings.filter(function (l) {
+      return !initialSection || (initialSection === "raw" ? l.is_ungraded : !l.is_ungraded);
+    }).map(function (l) {
+      return '<a class="trade-card" href="#/annuncio/' + encodeURIComponent(l.id) + '/' + encodeURIComponent(l.slab_id) + '" data-link>' +
+        photoImg(l.slab_id, "front", "(max-width:600px) 46vw, 180px") +
+        '<span><strong>' + esc(cardTitle(l)) + '</strong> · ' + esc(euros(l.price_cents)) + '</span></a>';
+    }).join("") + '</div>';
+  }
   function japanTabsRow(raw) {
     return '<div class="chip-row" role="navigation" aria-label="' + esc(tr("market.jp.h")) + '">' +
       '<a class="chip' + (!raw ? " on" : "") + '" href="#/giapponesi" data-link>' + esc(tr("nav.graded")) + "</a>" +
@@ -2436,19 +2462,108 @@
   function isOpenBuyerSale(sale) {
     return sale && ["requested", "accepted", "paid", "shipped"].indexOf(sale.status) >= 0;
   }
-  function listingBuyCta(listing, slab, merged, mySale) {
+  // v30: proposta di prezzo, distinta dalla richiesta di acquisto.
+  function priceOfferPanel(listing, mySale, myOffer) {
+    if (!state.user) return '<section class="price-offer-box"><h2>' + tr('po.title') +
+      '</h2><p class="dim">' + tr('po.needLogin') + ' <a data-link href="#/accedi">' + tr('nav.login') + '</a></p></section>';
+    if (state.user.id === listing.seller_id || listing.mine || isOpenBuyerSale(mySale) || Number(listing.price_cents) <= 100) return "";
+    if (myOffer && myOffer.status === "pending") {
+      return '<section class="price-offer-box"><h2>' + tr("po.title") + '</h2><p class="notice">' +
+        tr("po.waiting", { price: euros(myOffer.offer_cents) }) + ' <a href="#/vendite" data-link>' + tr("po.goto") + '</a></p></section>';
+    }
+    if (myOffer && myOffer.status === "accepted") {
+      return '<section class="price-offer-box"><h2>' + tr("po.title") + '</h2><p class="notice">' +
+        tr("po.acceptedHint", { price: euros(myOffer.offer_cents) }) + '</p></section>';
+    }
+    return '<section class="price-offer-box"><h2>' + tr("po.title") + '</h2>' +
+      '<p class="dim">' + tr("po.intro") + '</p>' +
+      '<form id="price-offer-form" class="price-offer-form"><label class="field">' + tr("po.amount") +
+      '<input name="offer_euros" type="number" inputmode="decimal" min="1" step="0.01" max="' +
+      esc(((Number(listing.price_cents) - 1) / 100).toFixed(2)) + '" required placeholder="25,00"></label>' +
+      '<label class="field">' + tr("po.message") + '<textarea name="message" maxlength="500" rows="2" placeholder="' + esc(tr("po.messagePh")) + '"></textarea></label>' +
+      '<p class="dim">' + tr("po.noReservation") + '</p>' +
+      '<p class="error" hidden></p><button class="btn primary" type="submit">' + tr("po.submit") + '</button></form></section>';
+  }
+  function bindPriceOfferForm(listing) {
+    var f = document.getElementById('price-offer-form');
+    if (!f) return;
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      var btn = f.querySelector('button[type="submit"]'), err = f.querySelector('.error');
+      var fd = new FormData(f);
+      err.hidden = true;
+      btn.disabled = true;
+      api('listings/' + encodeURIComponent(listing.id) + '/offers', {
+        body: { offer_euros: String(fd.get('offer_euros') || ''), message: String(fd.get('message') || '') }
+      }).then(function () { go('#/vendite'); })
+        .catch(function (e2) { btn.disabled = false; err.hidden = false; err.textContent = e2.message; });
+    };
+  }
+  function priceOfferStatus(status) { return tr('po.status.' + status); }
+  function pagePriceOffers(offers) {
+    function group(heading, rows, role) {
+      if (!rows.length) return '<section class="panel price-offers-list"><h2>' + heading +
+        '</h2><p class="dim">' + tr('po.empty') + '</p></section>';
+      return '<section class="panel price-offers-list"><h2>' + heading + '</h2><div class="list">' + rows.map(function (o) {
+        var actions = '';
+        if (role === 'seller' && o.status === 'pending') {
+          actions = (o.listing_status === 'active'
+            ? '<button type="button" class="btn primary" data-offer-action="accept" data-offer-id="' + esc(o.id) + '">' + tr('po.accept') + '</button> ' : '') +
+            '<button type="button" class="btn ghost" data-offer-action="reject" data-offer-id="' + esc(o.id) + '">' + tr('po.reject') + '</button>';
+        }
+        if (role === 'buyer' && (o.status === 'pending' || o.status === 'accepted')) {
+          actions += '<button type="button" class="btn ghost" data-offer-action="cancel" data-offer-id="' + esc(o.id) + '">' + tr('po.cancel') + '</button> ';
+        }
+        if (role === 'buyer' && o.status === 'accepted' && o.listing_status === 'active') {
+          actions += '<a class="btn primary" data-link href="#/annuncio/' + esc(o.listing_id) + '/' + esc(o.slab_id) + '">' + tr('po.checkout') + '</a>';
+        }
+        if (role === 'seller' && o.status === 'accepted') {
+          actions += '<span class="dim">' + tr('po.awaitBuyer') + '</span>';
+        }
+        var who = role === 'seller' ? o.buyer_name : o.seller_name;
+        return '<div class="list-item"><div></div><div><b>' + esc(o.card_name) + '</b>' +
+          '<p class="dim">' + esc(who || '') + ' · ' + esc(priceOfferStatus(o.status)) + '</p>' +
+          '<p><strong>' + euros(o.offer_cents) + '</strong> <span class="dim">(' + tr('po.asking') + ' ' + euros(o.asking_cents) + ')</span></p>' +
+          (o.message ? '<p class="muted">' + esc(o.message) + '</p>' : '') +
+          '<p class="dim">' + esc(String(o.created_at || '').slice(0, 16).replace('T', ' ')) + '</p>' +
+          '<div class="row-actions">' + actions + '</div></div></div>';
+      }).join('') + '</div></section>';
+    }
+    var uid = state.user && state.user.id;
+    return '<div class="price-offers-area">' +
+      group(tr('po.received'), offers.filter(function (o) { return o.seller_id === uid; }), 'seller') +
+      group(tr('po.sent'), offers.filter(function (o) { return o.buyer_id === uid; }), 'buyer') + '</div>';
+  }
+  function bindPriceOfferActions(root) {
+    root.querySelectorAll('[data-offer-action]').forEach(function (btn) {
+      btn.onclick = function () {
+        var action = btn.getAttribute('data-offer-action');
+        if (action === 'accept' && !window.confirm(tr('po.acceptConfirm'))) return;
+        btn.disabled = true;
+        api('offers/' + encodeURIComponent(btn.getAttribute('data-offer-id')) + '/' + action, { body: {} })
+          .then(function () { render(); })
+          .catch(function (e) { btn.disabled = false; alert(e.message); });
+      };
+    });
+  }
+
+  function listingBuyCta(listing, slab, merged, mySale, myOffer) {
     var isSeller = state.user && (state.user.id === listing.seller_id || listing.mine);
     if (!state.user || isSeller) {
       return '<p class="dim">' + tr("buy.needOther") + "</p>";
     }
+    var acceptedOffer = myOffer && myOffer.status === "accepted" ? myOffer : null;
+    var salePrice = acceptedOffer ? Number(acceptedOffer.offer_cents) : Number(listing.price_cents);
+    var offerData = acceptedOffer ? ' data-offer-id="' + esc(acceptedOffer.id) + '" data-offer-cents="' + esc(salePrice) + '"' : '';
+    var buyLabel = acceptedOffer ? tr("po.checkout") : tr("buy.submit");
     var digitalOnly = window.DreaMintTradeV9 && window.DreaMintTradeV9.isDigitalListing && window.DreaMintTradeV9.isDigitalListing(listing);
     if (digitalOnly) {
       if (mySale && isOpenBuyerSale(mySale)) {
         return '<p class="notice">' + tr("buy.sent", { link: '<a href="#/vendite" data-link>' + tr("buy.gotoSales") + "</a>" }) + "</p>";
       }
-      return '<form id="buy-form" class="buy-form" data-digital="1">' +
+      return '<form id="buy-form" class="buy-form" data-digital="1"' + offerData + ">" +
         '<p class="notice">' + tr("buy.noticeDigital") + "</p>" +
-        '<p class="error" id="form-err" hidden></p><button class="btn primary" type="submit">' + tr("buy.submit") + "</button></form>";
+        '<p class="error" id="form-err" hidden></p><button class="btn primary" type="submit">' + buyLabel + "</button></form>";
     }
     if (mySale && isOpenBuyerSale(mySale)) {
       return '<p class="notice">' + tr("buy.sent", { link: '<a href="#/vendite" data-link>' + tr("buy.gotoSales") + "</a>" }) + "</p>";
@@ -2461,7 +2576,7 @@
         (m.finderUrl ? '<a class="ship-find" href="' + esc(m.finderUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(m.finderLabel || tr("buy.pointDefault")) + "</a>" : "") +
         "</span></label>";
     }).join("");
-    return '<form id="buy-form" class="buy-form">' +
+    return '<form id="buy-form" class="buy-form"' + offerData + '>' +
       '<fieldset class="ship-box"><legend>' + tr("buy.shipLegend") + "</legend>" +
       '<p class="dim">' + tr("buy.shipHint") + "</p>" + italyShipNote() +
       '<div class="ship-methods">' + methodHtml + "</div>" +
@@ -2480,14 +2595,17 @@
       '<label class="field">' + tr("buy.message") + '<textarea name="message" placeholder="' + esc(tr("buy.messagePh")) + '"></textarea></label>' +
       '<label class="field">' + tr("buy.contact") + '<input name="contact" required></label>' +
       '<p class="notice">' + (merged.is_ungraded ? tr("buy.noticeRaw") : tr("buy.noticeGraded")) + "</p>" +
-      '<p class="error" id="form-err" hidden></p><button class="btn primary" type="submit">' + tr("buy.submit") + "</button></form>";
+      '<p class="error" id="form-err" hidden></p><button class="btn primary" type="submit">' + buyLabel + "</button></form>";
   }
   function bindBuyShipping(form, listing) {
+    var offerId = form && form.getAttribute("data-offer-id");
+    var buyEndpoint = offerId ? "offers/" + encodeURIComponent(offerId) + "/checkout" : "listings/" + listing.id + "/request";
+    var effectivePriceCents = offerId ? Number(form.getAttribute("data-offer-cents")) || Number(listing.price_cents) : Number(listing.price_cents);
     if (!form) return;
     if (form.getAttribute("data-digital") === "1") {
       form.onsubmit = function (e) {
         e.preventDefault();
-        api("listings/" + listing.id + "/request", { body: {} })
+        api(buyEndpoint, { body: {} })
           .then(function () { go("#/vendite"); })
           .catch(function (err) {
             var el = document.getElementById("form-err");
@@ -2528,7 +2646,7 @@
       addrInputs.forEach(function (inp) { inp.required = isAddr; });
       var totalEl = document.getElementById("ship-total");
       if (totalEl) {
-        var price = Number(listing.price_cents) || 0;
+        var price = effectivePriceCents || 0;
         var shipC = m ? Number(m.price_cents) || 0 : 0;
         var insC = (canInsure && form.querySelector('input[name="insurance"]') && form.querySelector('input[name="insurance"]').checked) ? (ship.insurance_cents || 300) : 0;
         var bits = [tr("buy.cardBit", { price: euros(price) })];
@@ -2555,7 +2673,7 @@
         dest.zip = fd.get("ship_zip");
         dest.province = fd.get("ship_province");
       }
-      api("listings/" + listing.id + "/request", {
+      api(buyEndpoint, {
         body: {
           message: fd.get("message"),
           contact: fd.get("contact"),
@@ -2566,7 +2684,7 @@
       }).then(function () { go("#/vendite"); }).catch(function (err) { showErr(err.message); });
     };
   }
-  function pageListing(listing, slab, mySale) {
+  function pageListing(listing, slab, mySale, myOffer) {
     var merged = {
       game: listing.game || slab.model.game,
       language: listing.language || slab.model.language,
@@ -2599,7 +2717,8 @@
       rarityCalloutHtml(slab.rarity_tier) +
       (slab.rarity_tier ? '<p class="row-actions"><button type="button" class="btn ghost" id="share-rarity">' + tr("card.share") + "</button></p>" : "") +
       "</div>") +
-      '<p class="price">' + euros(listing.price_cents) + "</p>" +
+      '<p class="price">' + euros(myOffer && myOffer.status === 'accepted' ? myOffer.offer_cents : listing.price_cents) + "</p>" +
+      ((myOffer && myOffer.status === 'accepted') ? '<p class="dim">' + esc(tr('po.originalPrice')) + ' ' + euros(listing.price_cents) + '</p>' : '') +
       (!listing.is_test && !slab.is_test ? '<p class="muted"><a href="/annuncio/' + encodeURIComponent(listing.id) + '" target="_blank" rel="noopener">Link pubblico e condivisibile dell’annuncio</a></p>' : '') +
       ((slab.can_edit_catalog && slab.model && slab.model.game === "pokemon")
         ? '<p class="row-actions"><a class="btn ghost" href="#/carta/' + esc(slab.id) + '" data-link>' + esc(tr("catalogEdit.title")) + '</a></p>' : "") +
@@ -2616,7 +2735,8 @@
       ((window.DreaMintTradeV9 && window.DreaMintTradeV9.on())
         ? window.DreaMintTradeV9.dealNoticeHtml() + window.DreaMintTradeV9.contactSellerHtml(listing)
         : "") +
-      listingBuyCta(listing, slab, merged, mySale) +
+      priceOfferPanel(listing, mySale, myOffer) +
+      listingBuyCta(listing, slab, merged, mySale, myOffer) +
       shareRowHtml(slab, listing) +
       "</section></section>";
   }
@@ -3633,6 +3753,17 @@
         if (!p[1]) { $app.innerHTML = '<section class="panel"><h2>' + tr("register.choice") + '</h2><div class="row"><a class="btn primary" href="#/registra/gradate" data-link>' + tr("reg.titleGraded") + '</a><a class="btn" href="#/registra/non-gradate" data-link>' + tr("reg.titleRaw") + "</a></div></section>"; return; }
         $app.innerHTML = pageRegister(rawReg); bindRegister(); return;
       }
+      if (p[0] === "galleria") {
+        document.title = tr("gallery.title") + " — DreaMint";
+        $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';
+        var initialType = p[1] === "gradate" ? "graded" : p[1] === "non-gradate" ? "raw" : "";
+        // GET /api/market senza section restituisce insieme gradate e non gradate.
+        var galData = await api("market");
+        $app.innerHTML = pageGallery(galData.listings || [], initialType);
+        if (window.DreaMintHome && window.DreaMintHome.bindMarketBoard) window.DreaMintHome.bindMarketBoard($app);
+        if (window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) window.DreaMintTradeV9.decorateTiles($app);
+        return;
+      }
       if (p[0] === "giapponesi") {
         $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';
         var jpSec = p[1] === "non-gradate" ? "ungraded" : "graded";
@@ -3643,6 +3774,8 @@
         return;
       }
       if (p[0] === "gradate" || p[0] === "non-gradate") {
+        // Compatibilità con i vecchi link. I filtri specifici rarità/condizione restano attivi.
+        if (!p[1]) { go(p[0] === "gradate" ? "#/galleria/gradate" : "#/galleria/non-gradate"); return; }
         $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';
         var sec = p[0] === "non-gradate" ? "ungraded" : "graded";
         var tierFilter = (sec === "graded" && tierInfo(p[1])) ? p[1] : "";
@@ -3866,14 +3999,14 @@
           return;
         }
       }
-      if (p[0] === "mercato") { go("#/gradate"); return; }
+      if (p[0] === "mercato") { go("#/galleria"); return; }
       if (p[0] === "annuncio" && p[1] && p[2]) {
-        var m2 = await api("market");
+        var m2 = await api("market?listing_id=" + encodeURIComponent(p[1]));
         var m2list = m2.listings || [];
         var listing = m2list.find(function (x) { return x.id === p[1]; });
         var sl = await api("cards/" + p[2]);
         if (!listing) { $app.innerHTML = '<section class="panel">' + tr("list.unavailable") + "</section>"; return; }
-        var mySale = null;
+        var mySale = null, myOffer = null;
         if (state.user) {
           try {
             var sls = await api("sales");
@@ -3881,19 +4014,29 @@
               return s.listing_id === listing.id && s.buyer_id === state.user.id && isOpenBuyerSale(s);
             }) || null;
           } catch (e) { mySale = null; }
+          try {
+            var oo = await api('offers');
+            myOffer = (oo.offers || []).find(function (o) {
+              return o.listing_id === listing.id && o.buyer_id === state.user.id &&
+                (o.status === 'pending' || o.status === 'accepted');
+            }) || null;
+          } catch (e) { myOffer = null; }
         }
-        $app.innerHTML = pageListing(listing, sl.card, mySale);
+        $app.innerHTML = pageListing(listing, sl.card, mySale, myOffer);
         bindShareRow(sl.card, listing);
         bindGallery();
         bindShareRarity(sl.card);
         bindBuyShipping(document.getElementById("buy-form"), listing);
+        bindPriceOfferForm(listing);
         if (window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) window.DreaMintTradeV9.enhanceDigitalCopy(sl.card);
         return;
       }
       if (p[0] === "vendite") {
         if (!state.user) { $app.innerHTML = pageAuth("login"); bindAuth("login"); return; }
-        var sls = await api("sales");
-        $app.innerHTML = pageSales(sls.sales || []);
+        var result = await Promise.all([api("sales"), api("offers")]);
+        var sls = result[0], offers = result[1];
+        $app.innerHTML = pagePriceOffers(offers.offers || []) + pageSales(sls.sales || []);
+        bindPriceOfferActions($app);
         bindReviewForms($app);
         $app.querySelectorAll("[data-act]").forEach(function (btn) {
           btn.onclick = function () {

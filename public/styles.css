@@ -1746,3 +1746,11 @@ body.mob-nav-open { overflow: hidden; }
 .slab-tile .tile-price-label { font:600 11px/1.4 system-ui,sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
 .slab-tile .tile-price-value { font:700 clamp(22px,3vw,28px)/1.15 system-ui,sans-serif; letter-spacing:-.035em; color:var(--ink); overflow-wrap:anywhere; }
 @media(max-width:420px){.slab-tile .tile-price-block{padding:10px 12px;margin-top:12px}}
+/* v30 — proposta di prezzo su un annuncio */
+.price-offer-box { margin: 1.25rem 0; padding: 1rem; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--offer-bg); }
+.price-offer-box h2, .price-offers-list h2 { font-size: 1.2rem; margin: 0 0 .75rem; }
+.price-offer-form { display: grid; gap: .7rem; }
+.price-offer-form .field input { max-width: 16rem; }
+.price-offers-area { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.price-offers-list .list-item { grid-template-columns: 0 1fr; }
+.price-offers-list .row-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .6rem; }

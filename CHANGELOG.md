@@ -10,6 +10,24 @@
 
 Storia ricavata dal codice, dalle migrazioni e dal lavoro recente sul frontend. Le versioni del server (v13–v21) coincidono con i file `migrate-vN.sql`. Il frontend in questo albero è la v9b, con estrazione reveal-v2 revisione rv3.
 
+## v31 — 2026-11-15 — Galleria unificata (locale, NON pubblicata)
+
+- Nuova voce **Galleria** nel menu desktop/mobile e nel footer (`#/galleria`), con caricamento immediato degli annunci gradati e non gradati nella stessa griglia.
+- **Tutte / Gradate / Non gradate** sono filtri visivi del medesimo elenco: non servono più scelte preliminari per visualizzare gli annunci. Restano i filtri per gioco e l'ordinamento per prezzo, nome e data.
+- Link diretti `#/galleria/gradate` e `#/galleria/non-gradate` applicano solo una selezione iniziale, revocabile con **Tutte**. Le vecchie URL `#/gradate` e `#/non-gradate` reindirizzano ai filtri equivalenti; i vecchi sottopercorsi di rarità e condizione rimangono utilizzabili.
+- La home e il footer aprono la nuova Galleria. Nessun cambiamento agli annunci, alle offerte, ai prezzi, ai certificati e alle API. Non richiede nuove migrazioni.
+- Test unitari: 131/131; test interattivo del componente in Chromium headless per filtri e selezione iniziale. Il caricamento del sito via server locale non è stato verificabile per una restrizione del browser di test; nessun deploy effettuato.
+
+## v30 — 2026-11-15 — Fai un’offerta e offerte al venditore (locale, NON pubblicato)
+
+- Nella pagina di ogni annuncio attivo, gli utenti registrati possono usare **Fai un’offerta** per proporre un importo inferiore al prezzo richiesto e lasciare un messaggio (nessuna prenotazione e nessun pagamento al solo invio).
+- Nuova sezione **Vendite e offerte** nel menu: due elenchi «Offerte ricevute» e «Offerte inviate», con prezzi, nomi, messaggi, stato; il venditore accetta/rifiuta, l’acquirente può annullare.
+- All’accettazione, l’acquirente può completare la normale richiesta d’acquisto scegliendo spedizione, assicurazione e recapito; la vendita registrata usa esattamente il prezzo concordato. Il pagamento è sempre diretto al venditore tramite PayPal secondo il sistema esistente e la carta non viene riservata finché non è confermato il pagamento.
+- Avvisi email a venditore/acquirente se il provider email del sito è configurato, indipendenti dal buon esito delle operazioni. Il sito mostra le offerte anche senza email.
+- `POST /api/listings/:id/offers`, `GET /api/offers`, `POST /api/offers/:id/{accept,reject,cancel,checkout}` con controllo della proprietà, stato annuncio, limiti richieste, prevenzione duplicati, importi validi e audit.
+- Nuova migrazione **additiva** `migrate-v30.sql` (`price_offers`), integrata nello script `DEPLOY.sh`. Le v28 e v29 restano incluse. `GET /api/market?listing_id=...` evita che i collegamenti agli annunci meno recenti spariscano quando ci sono più di 100 annunci.
+- Test API reali con SQLite più verifica della resa HTML nel browser Chromium headless. Nessuna operazione effettuata sul database o sul sito di produzione.
+
 ## v29 — 2026-11-15 — Correzione dati carta / collegamento TCGdex (locale, non pubblicato)
 
 - Nella pagina di una carta Pokémon propria, menu **«Modifica dati carta / collega TCGdex»**: ricerca TCGdex con lingua, risultati cliccabili con nome, espansione, numero e miniatura, scelta variante e (solo non gradate) condizione.
