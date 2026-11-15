@@ -195,7 +195,7 @@ test('i file aggiornati del trasferimento hanno URL versionati per evitare codic
   const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
   const cert=fs.readFileSync(new URL('../public/js/certificate.js',import.meta.url),'utf8');
   assert.match(html,/\/js\/certificate\.js\?v=20261115v34redeem/);
-  assert.match(html,/\/app\.js\?v=20261115v34redeem/);
+  assert.match(html,/\/app\.js\?v=20261115v35adminusers/);
   assert.match(html,/\/js\/i18n\.js\?v=20261115v34redeem/);
   assert.match(cert,/can_regenerate/);
   assert.match(cert,/transfer_locked/);

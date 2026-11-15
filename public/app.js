@@ -2959,11 +2959,84 @@
     }).join("") + "</div>";
   }
 
+  // v35 — Registro iscritti, solo admin. Lettura separata degli album e degli annunci attivi.
+  function adminUsersHash(q, page) {
+    return "#/admin/utenti?page=" + encodeURIComponent(page || 1) + (q ? "&q=" + encodeURIComponent(q) : "");
+  }
+  function adminUserHash(id, albumPage, marketPage) {
+    return "#/admin/utenti/" + encodeURIComponent(id) + "?album_page=" + (albumPage || 1) + "&market_page=" + (marketPage || 1);
+  }
+  function adminPageLinks(page, pages, makeHref) {
+    if (pages <= 1) return "";
+    return '<nav class="admin-user-pages" aria-label="Navigazione pagine">' +
+      (page > 1 ? '<a class="btn ghost" data-link href="' + makeHref(page - 1) + '">← Precedente</a>' : "") +
+      '<span>Pagina ' + page + ' di ' + pages + '</span>' +
+      (page < pages ? '<a class="btn ghost" data-link href="' + makeHref(page + 1) + '">Successiva →</a>' : "") + '</nav>';
+  }
+  function pageAdminUsers(data) {
+    var q = data.q || "", users = data.users || [];
+    var html = '<div class="page-head"><div><h1>Iscritti</h1><p>Elenco alfabetico degli utenti registrati. Solo per gli amministratori.</p></div>' +
+      '<a class="btn ghost" data-link href="#/admin">Pannello admin</a></div>' +
+      '<section class="panel admin-user-directory"><form id="admin-user-search" class="admin-user-search" role="search">' +
+      '<label class="field" for="admin-user-q">Cerca nome, username o email<input id="admin-user-q" name="q" type="search" maxlength="80" value="' + esc(q) + '" placeholder="Cerca tra tutti gli iscritti…" autocomplete="off"></label>' +
+      '<button class="btn primary" type="submit">Cerca</button>' +
+      (q ? '<a class="btn ghost" data-link href="#/admin/utenti">Azzera</a>' : "") + '</form>' +
+      '<p class="dim">' + data.total + ' iscritti' + (q ? ' trovati' : ' totali') + ' · Ordine alfabetico per nome</p>';
+    if (users.length) {
+      html += '<div class="admin-user-list">' + users.map(function (u) {
+        var label = u.display_name || u.username || u.email;
+        return '<a class="admin-user-row" data-link href="' + adminUserHash(u.id, 1, 1) + '">' +
+          '<span class="admin-user-avatar" aria-hidden="true">' + esc((label || "?").slice(0, 1).toUpperCase()) + '</span>' +
+          '<span class="admin-user-identity"><strong>' + esc(label) + '</strong>' +
+          (u.username ? '<small>@' + esc(u.username) + '</small>' : '') +
+          '<small>' + esc(u.email || '') + '</small></span>' +
+          '<span class="admin-user-stats"><span>' + Number(u.cards_count || 0) + ' carte</span><span>' + Number(u.listings_count || 0) + ' in vendita</span></span>' +
+          '<span class="admin-user-meta">' + (u.album_public ? 'Album pubblico' : 'Album privato') +
+          (u.role === 'admin' ? ' · Admin' : '') + (u.is_test ? ' · TEST' : '') + '</span></a>';
+      }).join('') + '</div>';
+    } else html += '<p class="empty">Nessun iscritto trovato.</p>';
+    return html + adminPageLinks(data.page, data.pages, function (p) { return adminUsersHash(q, p); }) + '</section>';
+  }
+  function pageAdminUserDetail(data) {
+    var u = data.user || {}, cards = data.cards || [], listings = data.listings || [];
+    var base = function (albumPage, marketPage) { return adminUserHash(u.id, albumPage, marketPage); };
+    var title = u.display_name || u.username || u.email || 'Utente';
+    var html = '<div class="page-head"><div><h1>' + esc(title) + '</h1><p>' +
+      (u.username ? '@' + esc(u.username) + ' · ' : '') + esc(u.email || '') +
+      ' · Iscritto il ' + esc(String(u.created_at || '').slice(0, 10)) +
+      ' · ' + (u.album_public ? 'Album pubblico' : 'Album privato') +
+      (u.role === 'admin' ? ' · Admin' : '') + '</p></div>' +
+      '<a class="btn ghost" data-link href="#/admin/utenti">← Tutti gli iscritti</a></div>';
+    html += '<div class="admin-user-summary"><div class="panel"><strong>' + data.cards_total + '</strong><span>Carte nell’Album</span></div>' +
+      '<div class="panel"><strong>' + data.listings_total + '</strong><span>Annunci attivi</span></div></div>';
+    html += '<section class="panel admin-user-inventory"><div class="admin-inventory-heading"><h2>Album</h2>' +
+      (u.username ? '<a class="btn ghost" data-link href="#/u/' + encodeURIComponent(u.username) + '">Apri album completo</a>' :
+        '<a class="btn ghost" data-link href="#/u/~' + encodeURIComponent(u.id) + '">Apri album completo</a>') +
+      '</div><p class="dim">Carte non archiviate: gradate, non gradate e in verifica. Comprende le copie digitali possedute.</p>';
+    html += cards.length ? '<div class="admin-inventory-grid">' + cards.map(function (c) {
+      return '<a class="admin-inventory-card" data-link href="#/carta/' + encodeURIComponent(c.id) + '">' +
+        '<img loading="lazy" alt="" src="/api/cards/' + encodeURIComponent(c.id) + '/photo/front?w=240">' +
+        '<span><strong>' + esc(c.card_name) + '</strong><small>' + esc(c.set_name || '') + ' · ' + esc(c.code_printed || '') + ' · ' + esc(c.language || '') + '</small>' +
+        '<small>' + (c.is_ungraded ? 'Non gradata' : 'Gradata · ' + esc(c.grader || '') + (c.grade ? ' ' + esc(c.grade) : '')) +
+        ' · ' + esc(c.status || '') + (c.active_listings ? ' · In vendita' : '') +
+        (c.digital_owner_id === u.id && c.physical_owner_id !== u.id ? ' · Solo copia digitale' : '') + '</small></span></a>';
+    }).join('') + '</div>' : '<p class="empty">Nessuna carta nell’Album.</p>';
+    html += adminPageLinks(data.album_page, data.album_pages, function (page) { return base(page, data.market_page); }) + '</section>';
+    html += '<section class="panel admin-user-inventory"><h2>Carte in vendita nel Market</h2>';
+    html += listings.length ? '<div class="admin-inventory-grid">' + listings.map(function (l) {
+      return '<a class="admin-inventory-card" data-link href="#/annuncio/' + encodeURIComponent(l.id) + '/' + encodeURIComponent(l.slab_id) + '">' +
+        '<img loading="lazy" alt="" src="/api/cards/' + encodeURIComponent(l.slab_id) + '/photo/front?w=240">' +
+        '<span><strong>' + esc(l.card_name) + '</strong><small>' + esc(l.set_name || '') + ' · ' + esc(l.language || '') + '</small>' +
+        '<small>' + (l.is_ungraded ? 'Non gradata' : 'Gradata') + ' · ' + euros(l.price_cents) + '</small></span></a>';
+    }).join('') + '</div>' : '<p class="empty">Nessun annuncio attivo.</p>';
+    return html + adminPageLinks(data.market_page, data.market_pages, function (page) { return base(data.album_page, page); }) + '</section>';
+  }
+
   function pageAdmin(items) {
     return '<section class="panel al-jump"><h2>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</h2>" +
       "<p>" + esc(trx("al.manageP", "Apri il pannello per cambiare lo stato di lancio. Ogni passaggio richiede una conferma esplicita e resta registrato.")) + "</p>" +
       '<p class="row-actions"><a class="btn primary" href="#/admin/lancio" data-link>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</a></p></section>" +
-      '<p class="row-actions"><a class="btn ghost" href="#/admin/assistenza" data-link>' + esc(tr("support.adminTitle")) + '</a><a class="btn ghost" href="#/admin/vendite" data-link>Vendite e spedizioni</a><a class="btn ghost" href="#/admin/partner" data-link>Partner</a><a class="btn ghost" href="#/admin/lancio" data-link>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</a>" +
+      '<p class="row-actions"><a class="btn ghost" href="#/admin/assistenza" data-link>' + esc(tr("support.adminTitle")) + '</a><a class="btn ghost" href="#/admin/utenti" data-link>Iscritti · Album e Market</a><a class="btn ghost" href="#/admin/vendite" data-link>Vendite e spedizioni</a><a class="btn ghost" href="#/admin/partner" data-link>Partner</a><a class="btn ghost" href="#/admin/lancio" data-link>' + esc(trx("al.manage", "Gestisci commissioni e piani")) + "</a>" +
       (window.DreaMintCert ? window.DreaMintCert.adminNavLink() : '<a class="btn ghost" href="#/admin/riscatti" data-link>Riscatti</a>') +
       "</p>" +
       '<section class="panel"><h2>Crea una carta TEST (solo admin)</h2>' +
@@ -4145,6 +4218,27 @@
         $app.querySelectorAll("[data-copy]").forEach(function (btn) {
           btn.onclick = function () { copyText(btn.getAttribute("data-copy"), btn); };
         });
+        return;
+      }
+      if (p[0] === "admin" && p[1] === "utenti") {
+        if (!state.user || state.user.role !== "admin") { $app.innerHTML = pageAuth("login"); bindAuth("login"); return; }
+        var params = new URLSearchParams((location.hash.split("?")[1] || ""));
+        if (p[2]) {
+          var userUrl = "admin/users/" + encodeURIComponent(p[2]) + "?album_page=" + encodeURIComponent(params.get("album_page") || "1") + "&market_page=" + encodeURIComponent(params.get("market_page") || "1");
+          var detail = await api(userUrl);
+          $app.innerHTML = pageAdminUserDetail(detail);
+        } else {
+          var directoryUrl = "admin/users?page=" + encodeURIComponent(params.get("page") || "1") + "&q=" + encodeURIComponent(params.get("q") || "");
+          var users = await api(directoryUrl);
+          $app.innerHTML = pageAdminUsers(users);
+          var form = document.getElementById("admin-user-search");
+          if (form) form.onsubmit = function (e) {
+            e.preventDefault();
+            var query = String(new FormData(form).get("q") || "").trim();
+            var newHash = adminUsersHash(query, 1);
+            if (location.hash === newHash) render(); else go(newHash);
+          };
+        }
         return;
       }
       if (p[0] === "admin" && p[1] === "vendite") {

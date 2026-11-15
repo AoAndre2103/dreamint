@@ -1762,3 +1762,27 @@ body.mob-nav-open { overflow: hidden; }
 .raw-transfer-code p{margin:0 0 10px}
 .transfer-code-value{display:block;overflow-wrap:anywhere;font-size:clamp(1.1rem,3.5vw,1.55rem);letter-spacing:.07em;margin-bottom:10px;font-family:ui-monospace,monospace}
 .raw-transfer-cta{margin-top:14px}
+
+/* v35 · Directory admin e inventari utenti */
+.admin-user-search{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin-bottom:15px}
+.admin-user-search .field{flex:1 1 260px;min-width:190px}
+.admin-user-list{display:grid;gap:7px;margin-top:15px}
+.admin-user-row{display:grid;grid-template-columns:44px minmax(150px,1.5fr) minmax(120px,1fr) minmax(115px,1fr);align-items:center;gap:14px;padding:13px;border:1px solid var(--border,rgba(120,160,160,.2));border-radius:12px;color:inherit;text-decoration:none;background:rgba(125,160,160,.035)}
+.admin-user-row:hover,.admin-inventory-card:hover{border-color:var(--mint,#02ac79);background:rgba(2,172,121,.06)}
+.admin-user-avatar{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:rgba(2,172,121,.16);font-weight:800;color:var(--mint,#02ac79)}
+.admin-user-identity{min-width:0;display:grid;gap:3px;overflow-wrap:anywhere}
+.admin-user-identity small,.admin-user-meta{color:var(--muted,#81939a);font-size:.83rem}
+.admin-user-stats{display:flex;flex-direction:column;gap:4px;font-size:.9rem}
+.admin-user-pages{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:18px;flex-wrap:wrap}
+.admin-user-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.admin-user-summary .panel{display:flex;flex-direction:column;gap:2px}
+.admin-user-summary strong{font-size:1.85rem;color:var(--mint,#02ac79)}
+.admin-user-summary span{font-size:.92rem}
+.admin-user-inventory{margin-bottom:18px}
+.admin-inventory-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.admin-inventory-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:10px;margin-top:14px}
+.admin-inventory-card{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--border,rgba(120,160,160,.2));border-radius:12px;color:inherit;text-decoration:none;min-width:0}
+.admin-inventory-card img{display:block;width:64px;height:90px;object-fit:contain;border-radius:7px;flex-shrink:0;background:rgba(100,100,100,.07)}
+.admin-inventory-card span{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
+.admin-inventory-card small{color:var(--muted,#81939a);font-size:.78rem}
+@media(max-width:710px){.admin-user-row{grid-template-columns:42px minmax(0,1fr);gap:8px}.admin-user-stats,.admin-user-meta{grid-column:2}.admin-user-stats{flex-direction:row;flex-wrap:wrap;gap:12px}.admin-user-summary{gap:8px}.admin-inventory-grid{grid-template-columns:1fr}}

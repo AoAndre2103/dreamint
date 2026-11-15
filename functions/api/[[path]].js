@@ -311,6 +311,10 @@ async function route(request, env, path, url) {
   if (method === "POST" && path === "admin/notify-test") return adminNotifyTest(request, env);
   if (method === "GET" && path === "admin/queue") return adminQueue(request, env);
   if (method === "GET" && path === "admin/sales") return adminSales(request, env);
+  // v35: directory and inventories are strictly admin-only, including private albums.
+  if (method === "GET" && path === "admin/users") return adminUsers(request, env, url);
+  const admUser = path.match(/^admin\/users\/([^/]+)$/);
+  if (method === "GET" && admUser) return adminUserInventory(request, env, admUser[1], url);
   const adm = path.match(/^admin\/cards\/([^/]+)$/);
   if (method === "GET" && adm) return adminCard(request, env, adm[1]);
   // v23: admin moderation from any album (soft removal, reversible, audited).
@@ -3143,6 +3147,80 @@ const _requireUser = requireUser;
 const _requireAdmin = requireAdmin;
 async function safeWrap() {}
 
+
+// v35 — read-only operator directory. Never expose full user accounts to public endpoints.
+const ADMIN_USER_PAGE_SIZE = 40;
+const ADMIN_INVENTORY_PAGE_SIZE = 36;
+function adminPage(value) {
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 1 ? Math.min(n, 1000000) : 1;
+}
+function adminEscapeLike(value) {
+  return value.replace(/[\\%_]/g, (m) => "\\" + m);
+}
+
+async function adminUsers(request, env, url) {
+  await requireAdmin(request, env); // auth before any D1 read
+  const q = String(url.searchParams.get("q") || "").trim().slice(0, 80);
+  const filter = q ? `WHERE (u.display_name LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\')` : "";
+  const terms = q ? Array(3).fill("%" + adminEscapeLike(q) + "%") : [];
+  const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM users u ${filter}`).bind(...terms).first();
+  const total = Number(count?.n || 0);
+  const pages = Math.max(1, Math.ceil(total / ADMIN_USER_PAGE_SIZE));
+  const page = Math.min(adminPage(url.searchParams.get("page")), pages);
+  const rows = await env.DB.prepare(
+    `SELECT u.id, u.username, u.display_name, u.email, u.role, u.album_public, u.created_at, u.is_test,
+       (SELECT COUNT(*) FROM slabs s WHERE s.archived_at IS NULL AND
+        (s.physical_owner_id = u.id OR (s.is_ungraded = 0 AND s.digital_owner_id = u.id))) AS cards_count,
+       (SELECT COUNT(*) FROM listings li WHERE li.seller_id = u.id AND li.status = 'active') AS listings_count
+     FROM users u ${filter}
+     ORDER BY u.display_name COLLATE NOCASE ASC, u.username COLLATE NOCASE ASC,
+              u.email COLLATE NOCASE ASC, u.id ASC
+     LIMIT ? OFFSET ?`
+  ).bind(...terms, ADMIN_USER_PAGE_SIZE, (page - 1) * ADMIN_USER_PAGE_SIZE).all();
+  return json({ users: rows.results || [], total, page, pages, page_size: ADMIN_USER_PAGE_SIZE, q });
+}
+
+async function adminUserInventory(request, env, id, url) {
+  await requireAdmin(request, env); // no member data without admin role
+  if (!/^[a-z0-9_-]{1,64}$/i.test(id)) return json({ error: "Utente non trovato" }, 404);
+  const u = await env.DB.prepare(
+    `SELECT id, username, display_name, email, role, created_at, album_public, is_test FROM users WHERE id = ?`
+  ).bind(id).first();
+  if (!u) return json({ error: "Utente non trovato" }, 404);
+  const cardWhere = "s.archived_at IS NULL AND (s.physical_owner_id = ? OR (s.is_ungraded = 0 AND s.digital_owner_id = ?))";
+  const cardCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM slabs s WHERE ${cardWhere}`).bind(id, id).first();
+  const listingCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM listings WHERE seller_id = ? AND status = 'active'").bind(id).first();
+  const cards_total = Number(cardCount?.n || 0), listings_total = Number(listingCount?.n || 0);
+  const album_pages = Math.max(1, Math.ceil(cards_total / ADMIN_INVENTORY_PAGE_SIZE));
+  const market_pages = Math.max(1, Math.ceil(listings_total / ADMIN_INVENTORY_PAGE_SIZE));
+  const album_page = Math.min(adminPage(url.searchParams.get("album_page")), album_pages);
+  const market_page = Math.min(adminPage(url.searchParams.get("market_page")), market_pages);
+  const [cards, listings] = await Promise.all([
+    env.DB.prepare(
+      `SELECT s.id, s.status, s.is_ungraded, s.grade, s.grader, s.card_condition, s.is_test,
+              s.physical_owner_id, s.digital_owner_id, m.name AS card_name, m.set_name,
+              m.code_printed, m.language, m.game,
+              (SELECT COUNT(*) FROM listings li WHERE li.slab_id = s.id AND li.seller_id = ? AND li.status = 'active') AS active_listings
+       FROM slabs s JOIN card_models m ON m.id = s.card_model_id
+       WHERE ${cardWhere} ORDER BY s.created_at DESC, s.id
+       LIMIT ? OFFSET ?`
+    ).bind(id, id, id, ADMIN_INVENTORY_PAGE_SIZE, (album_page - 1) * ADMIN_INVENTORY_PAGE_SIZE).all(),
+    env.DB.prepare(
+      `SELECT li.id, li.slab_id, li.price_cents, li.status, li.created_at, COALESCE(li.kind, 'fullset') AS kind,
+              s.is_ungraded, s.grader, s.grade, m.name AS card_name, m.set_name, m.code_printed,
+              m.language, m.game
+       FROM listings li JOIN slabs s ON s.id = li.slab_id
+       JOIN card_models m ON m.id = s.card_model_id
+       WHERE li.seller_id = ? AND li.status = 'active'
+       ORDER BY li.created_at DESC, li.id
+       LIMIT ? OFFSET ?`
+    ).bind(id, ADMIN_INVENTORY_PAGE_SIZE, (market_page - 1) * ADMIN_INVENTORY_PAGE_SIZE).all()
+  ]);
+  return json({ user: u, cards: cards.results || [], listings: listings.results || [],
+    cards_total, listings_total, album_page, album_pages, market_page, market_pages,
+    page_size: ADMIN_INVENTORY_PAGE_SIZE });
+}
 
 async function adminSales(request, env) {
   const admin = await requireAdmin(request, env);

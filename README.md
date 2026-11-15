@@ -1,5 +1,13 @@
 # DreaMint
 
+## Novità v35: elenco completo degli iscritti per gli admin (locale, NON pubblicata)
+
+- Nel pannello **Admin** è disponibile **Iscritti · Album e Market** (`#/admin/utenti`). Gli utenti vengono elencati per nome in ordine alfabetico, con ricerca per nome, username o email e paginazione da 40 account.
+- Per ciascun account gli amministratori possono aprire una scheda con **Album** (carte fisiche, copie digitali, non gradate, gradate, anche in verifica) e **annunci attivi nel Market**, con fotografie, stato e prezzo. Sezioni paginate separatamente, 36 elementi per pagina.
+- L'accesso è consentito **soltanto agli utenti con `role='admin'`**; entrambe le API `/api/admin/users` e `/api/admin/users/:id` verificano i permessi prima di interrogare il database. Gli Album privati sono consultabili unicamente da amministratori e dai proprietari secondo le regole preesistenti. Nessun dato personale viene aggiunto alle API pubbliche.
+- Funzione di sola consultazione: non modifica proprietari, fotografie, annunci, vendite o certificazioni. Nessuna nuova migrazione SQL v35.
+- **Test:** 160/160 automatici; browser di prova su `localhost` non raggiungibile per restrizioni dell'ambiente. Nessuna pubblicazione online. Per attivare il sito, eseguire il normale deploy dopo backup e con approvazione esplicita; restano necessarie migrazioni v30/v32 se mai eseguite.
+
 Marketplace italiano per collezionisti di carte TCG (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana): https://dreamint.it
 
 Il progetto Cloudflare Pages si chiama **gemint-beta** e usa Functions, D1 e KV. Questo repository è pensato per restare **privato** (nome previsto su GitHub: `dreamint`).

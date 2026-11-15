@@ -1,3 +1,10 @@
+## v35 — 2026-11-15 — Rubrica iscritti e inventari amministrativi (locale, NON pubblicata)
+
+- Aggiunta la sezione Admin → Iscritti con directory alfabetica completa, ricerca nome/username/email, paginazione e contatori di carte/annunci.
+- Scheda utente admin con Album (comprende elementi in verifica e album privati) e annunci Market attivi, foto e prezzo, paginazione separata, link ai dettagli.
+- API di sola lettura `GET /api/admin/users` e `GET /api/admin/users/:id` protette da `requireAdmin`, risposte `no-store` e campi personali non esposti alle API pubbliche.
+- 160 test automatici superati, inclusi accessi vietati, ordine alfabetico, wildcard, paginazione, card fisiche/digitali, private e in verifica. Nessuna migrazione del database e nessun deploy online.
+
 ## v34 — 2026-11-15 — Annunci chiusi automaticamente al riscatto (locale, NON pubblicata)
 
 - Per carte gradate e non gradate, un annuncio nel Market non blocca più la **generazione del codice**. La carta resta in vendita finché il compratore non usa validamente il codice.
