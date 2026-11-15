@@ -1,5 +1,12 @@
 # DreaMint
 
+## Novità v37: campanellina notifiche nella barra superiore (locale, NON pubblicata)
+
+- Campanellina sempre visibile per utenti autenticati nell'intestazione, dalla home e dalle altre pagine. Il badge mostra **solo le notifiche non lette** (1, 2, 3…; `99+` oltre 99). Quando non ci sono avvisi resta la campanella senza numero; da ospite non appare.
+- Un tocco apre `#/notifiche`, dove si leggono le novità e si usa «Segna tutte come lette». Il badge si aggiorna all'apertura, ogni 60 secondi e dopo la marcatura. Non si segna tutto come letto soltanto aprendo la campanella.
+- Controlli di accessibilità e blocco delle risposte tardive di un precedente account. Nessuna nuova API né migrazione oltre a quella **v36** già richiesta per notifiche e utenti seguiti.
+- Aggiornamento cache JS/CSS, test automatici della campanella; nessuna modifica al sito di produzione.
+
 ## Novità v36: Segui e notifiche (locale, NON pubblicata)
 
 - Nei profili `#/u/:username` compare **Segui / Non seguire** per gli utenti autenticati. Anche un profilo con Album privato può essere seguito, ma **non mostra le sue carte né genera notifiche** finché l'Album non diventa pubblico.

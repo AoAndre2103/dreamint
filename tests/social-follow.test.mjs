@@ -160,6 +160,6 @@ test('frontend: pulsante Segui, inbox, badge, migrazione e script versionato', (
   assert.match(app, /if \(p\[0\] === 'notifiche'\)/);
   assert.match(app, /function pageFollowNotifications\(/);
   assert.match(app, /function refreshNotificationCount\(/);
-  assert.match(html, /app\.js\?v=20261115v36follows/);
+  assert.match(html, /app\.js\?v=20261115v37bell/);
   assert.match(deploy, /migrate-v36\.sql/);
 });

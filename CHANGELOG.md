@@ -1,3 +1,9 @@
+## v37 — 2026-11-15 — Campanellina notifiche (locale, non pubblicata)
+
+- Campanellina in alto nel sito, visibile agli account autenticati su homepage e su tutte le sezioni. Badge con numero delle notifiche non lette, senza numero a zero e `99+` per contatori elevati.
+- Clic sulla campanella: apertura della sezione Notifiche esistente; accessibilità tastiera, contrasto, descrizione del numero. Stato sincronizzato con lettura e polling v36; nessuna notifica rivelata dopo cambio account.
+- CSS responsive, JS e CSS versionati per aggiornare la cache. Nessuna nuova migrazione (v36 ancora necessaria se non applicata) né intervento online.
+
 ## v36 — 2026-11-15 — Segui e notifiche nuove carte (locale, non pubblicata)
 
 - Aggiunto Segui / Non seguire sui profili, con protezione anti self-follow e lista profili seguiti.

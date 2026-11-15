@@ -1797,3 +1797,38 @@ body.mob-nav-open { overflow: hidden; }
 .follow-notification.unread { border-left:3px solid var(--mint,#02ac79); padding-left:12px; background:rgba(2,172,121,.07); }
 .follow-notification time { margin-left:auto; font-size:.83em; opacity:.7; }
 .follow-user-list { display:flex; gap:9px; flex-wrap:wrap; margin-top:12px; }
+
+/* v37 — Notifiche sempre raggiungibili dalla campanellina nell'intestazione. */
+.notification-bell {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 42px; width: 42px; height: 42px;
+  border-radius: 12px; border: 1px solid var(--line-strong, var(--line));
+  background: var(--bg-2); color: var(--ink); text-decoration: none;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.notification-bell[hidden], .notification-bell-count[hidden] { display: none !important; }
+.notification-bell:hover, .notification-bell:focus-visible, .notification-bell.on {
+  border-color: var(--mint-strong, #02ac79); color: var(--mint-strong, #02ac79);
+}
+.notification-bell:focus-visible { outline: 2px solid var(--mint-strong, #02ac79); outline-offset: 3px; }
+.notification-bell.has-unread { border-color: rgba(2,172,121,.65); }
+.notification-bell-count {
+  position: absolute; display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; min-width: 19px; height: 19px; padding: 0 4px;
+  top: -7px; right: -7px; border-radius: 20px;
+  background: #8efce5; color: #07131c; border: 2px solid var(--bg-2, #0c1a24);
+  font: 800 10px/1 var(--sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+@media (max-width: 540px) {
+  .topnav { padding-inline: 12px; gap: 7px; }
+  .nav-end { gap: 5px; flex-wrap: nowrap; }
+  .notification-bell { flex-basis: 38px; width: 38px; height: 38px; }
+  .nav-menu-toggle { width: 38px; height: 38px; }
+  .brand-logo { height: 27px; }
+}
+@media (max-width: 370px) {
+  .topnav { padding-inline: 8px; }
+  .nav-end { gap: 3px; }
+  .brand-logo { height: 24px; }
+}

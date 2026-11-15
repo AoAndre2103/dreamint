@@ -1576,14 +1576,32 @@
     document.body.classList.add("mob-nav-open");
   }
   function updateNotificationBadges() {
-    document.querySelectorAll('a[href="#/notifiche"]').forEach(function (a) {
+    // Il badge del menu è testo. Non sovrascrivere il link grafico della campanellina.
+    document.querySelectorAll('.desk-nav a[href="#/notifiche"], .mob-nav a[href="#/notifiche"]').forEach(function (a) {
       a.innerHTML = esc(socialText('Notifiche', 'Notifications')) + adminBadgeHtml(state.unreadNotifications);
     });
+    var bell = document.getElementById('notification-bell');
+    var count = document.getElementById('notification-bell-count');
+    if (!bell || !count) return;
+    bell.hidden = !state.user;
+    var unread = state.user ? Math.max(0, Math.floor(Number(state.unreadNotifications) || 0)) : 0;
+    count.hidden = unread === 0;
+    count.textContent = unread > 99 ? '99+' : String(unread);
+    bell.classList.toggle('has-unread', unread > 0);
+    var accessibleLabel = unread ? socialText('Notifiche non lette: ', 'Unread notifications: ') + unread :
+      socialText('Notifiche, nessuna da leggere', 'Notifications, none unread');
+    bell.setAttribute('aria-label', accessibleLabel);
+    bell.title = accessibleLabel;
   }
+  var notificationRequestId = 0;
   function refreshNotificationCount() {
+    var requestId = ++notificationRequestId;
+    var userId = state.user && state.user.id;
     if (!state.user) { state.unreadNotifications = 0; updateNotificationBadges(); return; }
     api('me/notifications').then(function (data) {
-      state.unreadNotifications = Number(data.unread_count) || 0;
+      // Non mostrare i contatori di un account precedente dopo il logout/cambio utente.
+      if (requestId !== notificationRequestId || !state.user || state.user.id !== userId) return;
+      state.unreadNotifications = Math.max(0, Number(data.unread_count) || 0);
       updateNotificationBadges();
     }).catch(function () {});
   }
@@ -1657,6 +1675,7 @@
     }
   }
   function renderChrome() {
+    updateNotificationBadges();
     if (window.DreaMintTradeV9) {
       window.DreaMintTradeV9.setCfg(state.cfg || {});
       window.DreaMintTradeV9.setUser(state.user);
@@ -1972,7 +1991,9 @@
     btn.addEventListener('click', function () {
       btn.disabled = true;
       api('me/notifications/read', { method: 'POST', body: {} }).then(function () {
+        notificationRequestId++; // invalida conteggi precedenti ancora in risposta
         state.unreadNotifications = 0;
+        updateNotificationBadges();
         render();
       }).catch(function (err) { btn.disabled = false; dmToast(err.message); });
     });
@@ -4036,6 +4057,7 @@
         if (!state.user) { $app.innerHTML = pageAuth('login'); bindAuth('login'); return; }
         $app.innerHTML = '<div class="skel" style="min-height:240px"></div>';
         var socialData = await Promise.all([api('me/notifications'), api('me/following')]);
+        notificationRequestId++; // una lettura completa prevale sul polling precedente
         state.unreadNotifications = Number(socialData[0].unread_count) || 0;
         updateNotificationBadges();
         $app.innerHTML = pageFollowNotifications(socialData[0], socialData[1]);
