@@ -1514,6 +1514,7 @@
       { href: "#/", label: tr("nav.home") },
       { href: "#/gradate", label: tr("nav.graded") },
       { href: "#/non-gradate", label: tr("nav.ungraded") },
+      { href: "#/giapponesi", label: tr("nav.japan") },
       { href: "#/album", label: tr("nav.collection") },
       { href: "#/commissioni", label: trx("nav.fees", "Commissioni e piani"), cls: "nav-fees" }
     ];
@@ -2197,7 +2198,13 @@
       '<div class="lightbox" id="lightbox" hidden><button type="button" class="lightbox-close" aria-label="' + esc(tr("gal.close")) + '">×</button>' +
       '<img id="lb-img" alt="' + esc(tr("gal.full")) + '"></div></section>';
   }
-  function pageMarket(listings, section, tierFilter, condFilter) {
+  function japanTabsRow(raw) {
+    return '<div class="chip-row" role="navigation" aria-label="' + esc(tr("market.jp.h")) + '">' +
+      '<a class="chip' + (!raw ? " on" : "") + '" href="#/giapponesi" data-link>' + esc(tr("nav.graded")) + "</a>" +
+      '<a class="chip' + (raw ? " on" : "") + '" href="#/giapponesi/non-gradate" data-link>' + esc(tr("nav.ungraded")) + "</a></div>";
+  }
+  function pageMarket(listings, section, tierFilter, condFilter, mopts) {
+    var jp = !!(mopts && mopts.lang === "JPN");
     var raw = section === "ungraded";
     condFilter = condFilter || "";
     var dateLabel = (state.cfg.launchPublicDateLabel && state.cfg.launchPublicDateLabel !== "Data di lancio pubblico: da annunciare")
@@ -2214,8 +2221,16 @@
         '<p class="notes">' + tr("market.graded.notes", { date: dateLabel, range: feeRangeText(state.cfg) }) + italyShipNote() + "</p>" +
         rarityFilterRow(tierFilter) +
         ((window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) ? window.DreaMintTradeV9.certSearchCompact() + window.DreaMintTradeV9.offerFilterRow(window.DreaMintTradeV9.activeOffer()) : "");
-    html += '<p class="row-actions"><a class="btn ghost" href="#/vendite" data-link>' + tr("market.sales") + "</a></p>";
-    if (!raw && window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) {
+    if (jp) {
+      // v28: sezione carte giapponesi: stesse schede del mercato, filtrate per lingua
+      html = '<div class="page-head"><div><h1>' + tr("market.jp.h") + "</h1><p>" + tr("market.jp.p") + "</p></div>" +
+        '<a class="btn primary" href="#/registra/' + (raw ? "non-gradate" : "gradate") + '" data-link>' + tr(raw ? "market.sell" : "market.register") + "</a></div>" +
+        japanTabsRow(raw) +
+        '<p class="notes">' + tr(raw ? "market.ungraded.notes" : "market.graded.notes", { date: dateLabel, range: feeRangeText(state.cfg) }) + italyShipNote() + "</p>";
+    }
+    html += '<p class="row-actions"><a class="btn ghost" href="#/vendite" data-link>' + tr("market.sales") + "</a>" +
+      (jp ? "" : ' <a class="btn ghost" href="#/giapponesi" data-link>' + tr("nav.japan") + "</a>") + "</p>";
+    if (!jp && !raw && window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) {
       listings = window.DreaMintTradeV9.filterByOffer(listings, window.DreaMintTradeV9.activeOffer());
     }
     if (!raw && tierFilter) {
@@ -2230,7 +2245,7 @@
     }
     if (!listings.length) {
       // Empty state: no demo/placeholder cards (demo cards live only in the home hero).
-      var emptyMsg = raw ? tr("market.emptyRaw")
+      var emptyMsg = jp ? tr("market.jp.empty") : raw ? tr("market.emptyRaw")
         : (tierFilter && tierInfo(tierFilter)) ? tr("market.emptyTier", { tier: tierInfo(tierFilter).label })
         : tr("market.emptyGraded");
       var sellHref = raw ? "#/registra/non-gradate" : "#/registra/gradate";
@@ -2821,7 +2836,8 @@
     });
     if (work && work.cropper) {
       var z = document.querySelector('input[data-zoom][data-for="' + kind + '"]');
-      if (z) z.value = String(Math.round((work.cropper.getZoom() || 1) * 100));
+      // mentre l'utente trascina il cursore non lo riscriviamo: su iPhone farebbe "scattare" il pallino
+      if (z && z.getAttribute("data-drag") !== "1") z.value = String(Math.round((work.cropper.getZoom() || 1) * 100));
     }
   }
   function exportWork(kind) {
@@ -2967,6 +2983,13 @@
           if (work.cropper) work.cropper.setOrientation(work.rotate90 || 0, work.angle || 0, false);
         });
       });
+    });
+    document.querySelectorAll("input[data-zoom], input[data-angle]").forEach(function (inp) {
+      var on = function () { inp.setAttribute("data-drag", "1"); };
+      var off = function () { inp.removeAttribute("data-drag"); };
+      inp.addEventListener("pointerdown", on);
+      inp.addEventListener("touchstart", on, { passive: true });
+      ["pointerup", "pointercancel", "touchend", "touchcancel", "change", "blur"].forEach(function (ev) { inp.addEventListener(ev, off); });
     });
     document.querySelectorAll("input[data-zoom]").forEach(function (inp) {
       inp.addEventListener("input", function () {
@@ -3477,6 +3500,15 @@
         var rawReg = p[1] === "non-gradate" || p[1] === "raw";
         if (!p[1]) { $app.innerHTML = '<section class="panel"><h2>' + tr("register.choice") + '</h2><div class="row"><a class="btn primary" href="#/registra/gradate" data-link>' + tr("reg.titleGraded") + '</a><a class="btn" href="#/registra/non-gradate" data-link>' + tr("reg.titleRaw") + "</a></div></section>"; return; }
         $app.innerHTML = pageRegister(rawReg); bindRegister(); return;
+      }
+      if (p[0] === "giapponesi") {
+        $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';
+        var jpSec = p[1] === "non-gradate" ? "ungraded" : "graded";
+        var jpRes = await api("market?section=" + jpSec + "&language=JPN");
+        $app.innerHTML = pageMarket(jpRes.listings || [], jpSec, "", "", { lang: "JPN" });
+        if (window.DreaMintHome && window.DreaMintHome.bindMarketBoard) window.DreaMintHome.bindMarketBoard($app);
+        if (window.DreaMintTradeV9 && window.DreaMintTradeV9.on()) window.DreaMintTradeV9.decorateTiles($app);
+        return;
       }
       if (p[0] === "gradate" || p[0] === "non-gradate") {
         $app.innerHTML = '<div class="skel" style="min-height:280px"></div>';

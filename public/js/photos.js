@@ -281,7 +281,8 @@
     return data.length > MAX_DATA_CHARS ? null : data;
   }
 
-  function rotatedCanvas(img, rotate90, angle, target) {
+  // quality: "high" per l'esportazione; "low" per l'anteprima che si muove (molto più veloce su iPhone).
+  function rotatedCanvas(img, rotate90, angle, target, quality) {
     var rad90 = ((rotate90 || 0) % 360) * Math.PI / 180;
     var swap = Math.abs(Math.cos(rad90)) < 0.5;
     var iw = img.naturalWidth || img.width;
@@ -291,15 +292,18 @@
     var mw = swap ? ih : iw;
     var mh = swap ? iw : ih;
     var pad = (angle ? 0.12 : 0);
-    mid.width = Math.round(mw * (1 + pad));
-    mid.height = Math.round(mh * (1 + pad));
+    var cw = Math.round(mw * (1 + pad)), ch = Math.round(mh * (1 + pad));
+    // Assegnare width/height rialloca il canvas anche se il valore è uguale: lo facciamo solo se cambia.
+    if (mid.width !== cw) mid.width = cw;
+    if (mid.height !== ch) mid.height = ch;
     var ctx = mid.getContext("2d", { alpha: false });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#F5F1E8";
     ctx.fillRect(0, 0, mid.width, mid.height);
     ctx.translate(mid.width / 2, mid.height / 2);
     ctx.rotate(rad90 + fine);
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
+    ctx.imageSmoothingQuality = quality || "high";
     ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
     return mid;
   }
@@ -578,6 +582,17 @@
     return crop;
   }
 
+  // Quando raddrizzi di poco la foto la tela "mid" passa da W a W×1,12 (margine di sicurezza) e il centro
+  // dell'immagine si sposta: senza questa correzione il ritaglio saltava al primo movimento e al ritorno a 0°.
+  function shiftCropForMid(crop, oldMid, newMid) {
+    return {
+      sx: crop.sx + (newMid.width - oldMid.width) / 2,
+      sy: crop.sy + (newMid.height - oldMid.height) / 2,
+      sw: crop.sw,
+      sh: crop.sh
+    };
+  }
+
   function midSize(img, rotate90, angle) {
     var rad90 = ((rotate90 || 0) % 360) * Math.PI / 180;
     var swap = Math.abs(Math.cos(rad90)) < 0.5;
@@ -619,7 +634,7 @@
       stage.appendChild(canvas);
     }
     var ctx = canvas.getContext("2d");
-    live.style.willChange = "auto";
+    live.style.willChange = "transform"; // livello GPU fisso: non lo togliamo tra un gesto e l'altro
     var preview = opts.image ? makePreview(opts.image) : { src: null, own: false };
     var liveScale = 1;
     var size = null;
@@ -648,11 +663,21 @@
       changeTimer = setTimeout(function () { if (!state.destroyed) onChange(); }, 160);
     }
 
-    function rebuildMid() {
+    var settleTimer = 0;
+    // fast=true: anteprima veloce mentre muovi il cursore; poi, a cursore fermo, una sola rifinitura in alta qualità.
+    function rebuildMid(fast) {
       if (!state.img) return;
       state.mid = midSize(state.img, state.rotate90, state.angle);
-      rotatedCanvas(preview.src, state.rotate90, state.angle, live);
+      rotatedCanvas(preview.src, state.rotate90, state.angle, live, fast ? "low" : "high");
       liveScale = state.mid.width / Math.max(1, live.width);
+      clearTimeout(settleTimer);
+      if (fast) {
+        settleTimer = setTimeout(function () {
+          if (state.destroyed || gesturing) return;
+          rotatedCanvas(preview.src, state.rotate90, state.angle, live, "high");
+          schedule(false);
+        }, 220);
+      }
     }
 
     function maxCrop() {
@@ -842,15 +867,12 @@
       state.sx = cx - state.sw / 2;
       state.sy = cy - state.sh / 2;
       clamp();
-      if (!skipDraw) { schedule(true); }
+      if (!skipDraw) { schedule(!ratio()); }
     }
 
     function onPointerDown(e) {
       if (e.button != null && e.button !== 0) return;
-      if (!gesturing) {
-        measure();
-        live.style.willChange = "transform";
-      }
+      if (!gesturing) measure();
       pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
       gesturing = true;
       try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
@@ -888,7 +910,6 @@
       if (Object.keys(pointers).length < 2) pinch = null;
       if (!Object.keys(pointers).length && gesturing) {
         gesturing = false;
-        live.style.willChange = "auto";
         schedule(true);
         notify();
       }
@@ -944,11 +965,20 @@
         notify();
       },
       setOrientation: function (rotate90, angle, refit) {
+        var oldMid = state.mid, oldRot = state.rotate90;
         state.rotate90 = rotate90 || 0;
         state.angle = angle || 0;
-        rebuildMid();
+        rebuildMid(refit === false);
         if (refit !== false) applySuggested();
-        else { clamp(); draw(); }
+        else {
+          if (oldMid && state.mid && oldRot === state.rotate90 && (oldMid.width !== state.mid.width || oldMid.height !== state.mid.height)) {
+            var moved = shiftCropForMid({ sx: state.sx, sy: state.sy, sw: state.sw, sh: state.sh }, oldMid, state.mid);
+            state.sx = moved.sx; state.sy = moved.sy;
+          }
+          clamp();
+          applyLiveTransform();
+          schedule(!ratio());
+        }
         notify();
       },
       reset: function () {
@@ -972,6 +1002,7 @@
         window.removeEventListener("resize", onWin);
         if (ro) ro.disconnect();
         clearTimeout(changeTimer);
+        clearTimeout(settleTimer);
         if (raf) cancelAnimationFrame(raf);
         if (preview.own) releaseCanvas(preview.src);
         preview = { src: null, own: false };
@@ -992,6 +1023,8 @@
     fallback: fallback,
     isHeicFile: isHeicFile,
     suggestCrop: suggestCrop,
-    createCropper: createCropper
+    createCropper: createCropper,
+    _shiftCropForMid: shiftCropForMid,
+    _rotatedCanvas: rotatedCanvas
   };
 })(window);

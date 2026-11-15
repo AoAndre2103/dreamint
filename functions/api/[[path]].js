@@ -1857,7 +1857,11 @@ async function listMarket(request, url, env) {
   let extra = "";
   if (section === "ungraded" || section === "non_gradate" || section === "raw") extra = " AND s.is_ungraded = 1";
   else if (section === "graded" || section === "gradate") extra = " AND s.is_ungraded = 0";
-  const rows = await env.DB.prepare(
+  // v28: filtro per lingua della carta (es. language=JPN per la sezione giapponese)
+  const langRaw = (url.searchParams.get("language") || "").trim().toUpperCase();
+  if (langRaw && !LANGUAGES.includes(langRaw)) return json({ error: "Lingua non valida", code: "invalid_language" }, 400);
+  if (langRaw) extra += " AND m.language = ?";
+  const marketStmt = env.DB.prepare(
     `SELECT l.*, s.grader, s.grade, s.is_ungraded, s.is_test, s.card_condition, s.rarity_tier, s.serial_number, s.serial_total_at_assignment, s.opened_at,
             s.certificate_no, s.cardmarket_avg_cents, m.game, m.set_name, m.set_code, m.code_printed, m.code_normalized, m.name AS card_name, m.catalog_image,
             m.language, m.variant, u.display_name AS seller_name, c.registered_count,
@@ -1870,7 +1874,8 @@ async function listMarket(request, url, env) {
      WHERE l.status = 'active' AND ` + listingValidSql("l") + ` AND ${testVisibleSql(user)}` + extra + `
      ORDER BY l.created_at DESC
      LIMIT 100`
-  ).all();
+  );
+  const rows = await (langRaw ? marketStmt.bind(langRaw) : marketStmt).all();
   const listings = (rows.results || []).map((r) => ({
       id: r.id,
       slab_id: r.slab_id,
